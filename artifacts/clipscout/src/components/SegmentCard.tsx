@@ -29,17 +29,27 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Initial clip load — no timeout, let it run until complete or error
+  // Initial clip load — no timeout, let it run until complete or error.
+  // If 0 results, retry once with first 2 words of keywords.
   const loadInitialClips = useCallback(async () => {
     if (loadedRef.current) return;
     loadedRef.current = true;
     setLoadingInitial(true);
     try {
-      const newClips = await fetchPexelsClips(segment, 1);
+      let newClips = await fetchPexelsClips(segment, 1);
+
+      if (newClips.length === 0) {
+        // Retry with simplified keywords (first 2 words)
+        const simplified = segment.pexels_keywords.split(' ').slice(0, 2).join(' ');
+        const retrySegment = { ...segment, pexels_keywords: simplified };
+        newClips = await fetchPexelsClips(retrySegment, 1);
+      }
+
       if (newClips.length > 0) {
         storage.addClips(segment.id, newClips);
         setClips(newClips);
       }
+      // If still 0, falls through to show "No clips found"
     } catch {
       // On error, show "No clips found" — user can use Add 4 More
     } finally {
@@ -99,7 +109,10 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
       let newClips: Clip[] = [];
       if (source === 'pexels') {
         const nextPage = pexelsPage + 1;
-        newClips = await fetchPexelsClips(segment, nextPage);
+        // Use single broad keyword for better results on Add 4 More
+        const broadKeyword = segment.pexels_keywords.split(' ')[0];
+        const broadSegment = { ...segment, pexels_keywords: broadKeyword };
+        newClips = await fetchPexelsClips(broadSegment, nextPage);
         setPexelsPage(nextPage);
       } else {
         const nextPage = giphyPage + 1;
