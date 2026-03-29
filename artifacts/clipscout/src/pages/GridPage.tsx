@@ -55,7 +55,7 @@ export function GridPage({ onBack, onSettings }: Props) {
       const newSet = new Set<string>();
       results.forEach(({ id, clips }) => {
         newClips[id] = clips;
-        newSet.add(id);
+        if (clips.length > 0) newSet.add(id);
       });
       setPreloadedClips(newClips);
       setPreloadedSet(newSet);

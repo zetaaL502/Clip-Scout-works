@@ -19,14 +19,14 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const { addToast } = useToastCtx();
   const [clips, setClips] = useState<Clip[]>(initialClips);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [loadingInitial, setLoadingInitial] = useState(!isPreloaded);
+  const [loadingInitial, setLoadingInitial] = useState(!isPreloaded || initialClips.length === 0);
   const [showDropdown, setShowDropdown] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [pexelsPage, setPexelsPage] = useState(segment.pexels_page);
   const [giphyPage, setGiphyPage] = useState(segment.giphy_page);
   const cardRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadedRef = useRef(isPreloaded);
+  const loadedRef = useRef(isPreloaded && initialClips.length > 0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
