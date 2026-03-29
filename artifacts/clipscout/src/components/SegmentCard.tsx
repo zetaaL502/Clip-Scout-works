@@ -3,7 +3,6 @@ import { Plus, ChevronDown } from 'lucide-react';
 import { ClipCard } from './ClipCard';
 import { storage } from '../storage';
 import { fetchPexelsClips, fetchGiphyClips } from '../api';
-import { useToastCtx } from '../context/ToastContext';
 import type { Clip, Segment } from '../types';
 
 interface Props {
@@ -16,9 +15,9 @@ interface Props {
 }
 
 export function SegmentCard({ segment, index, total, initialClips, isPreloaded, onSelectionChange }: Props) {
-  const { addToast } = useToastCtx();
   const [clips, setClips] = useState<Clip[]>(initialClips);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(!isPreloaded || initialClips.length === 0);
   const [showDropdown, setShowDropdown] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -30,6 +29,7 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Initial clip load — no timeout, let it run until complete or error
   const loadInitialClips = useCallback(async () => {
     if (loadedRef.current) return;
     loadedRef.current = true;
@@ -41,14 +41,14 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         setClips(newClips);
       }
     } catch {
-      // silent fallback
+      // On error, show "No clips found" — user can use Add 4 More
     } finally {
       setLoadingInitial(false);
     }
   }, [segment]);
 
   useEffect(() => {
-    if (isPreloaded) return;
+    if (isPreloaded && initialClips.length > 0) return;
     const el = cardRef.current;
     if (!el) return;
     observerRef.current = new IntersectionObserver(
@@ -62,7 +62,7 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
     );
     observerRef.current.observe(el);
     return () => observerRef.current?.disconnect();
-  }, [isPreloaded, loadInitialClips]);
+  }, [isPreloaded, initialClips.length, loadInitialClips]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -77,6 +77,7 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   async function loadMore(source: 'pexels' | 'giphy') {
     setShowDropdown(false);
     setLoadingMore(true);
+    setLoadMoreError(false);
     setCooldown(3);
     cooldownRef.current = setInterval(() => {
       setCooldown((prev) => {
@@ -87,6 +88,12 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         return prev - 1;
       });
     }, 1000);
+
+    // 15 second timeout for Add 4 More only
+    const timeoutId = setTimeout(() => {
+      setLoadingMore(false);
+      setLoadMoreError(true);
+    }, 15000);
 
     try {
       let newClips: Clip[] = [];
@@ -99,16 +106,15 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         newClips = await fetchGiphyClips(segment, nextPage);
         setGiphyPage(nextPage);
       }
+      clearTimeout(timeoutId);
 
-      if (newClips.length === 0) {
-        addToast('info', 'No clips found for this segment.');
-      } else {
+      if (newClips.length > 0) {
         storage.addClips(segment.id, newClips);
         setClips((prev) => [...prev, ...newClips]);
       }
-    } catch (err) {
-      console.error('[SegmentCard] loadMore error:', err);
-      addToast('error', `Failed: ${(err as Error).message}`);
+    } catch {
+      clearTimeout(timeoutId);
+      setLoadMoreError(true);
     } finally {
       setLoadingMore(false);
     }
@@ -133,7 +139,7 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         <div className="relative" ref={dropdownRef}>
           <button
             disabled={cooldown > 0 || loadingMore}
-            onClick={() => setShowDropdown((v) => !v)}
+            onClick={() => { setShowDropdown((v) => !v); setLoadMoreError(false); }}
             className="flex items-center gap-1.5 text-sm font-medium text-gray-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-3 py-2 rounded-lg hover:bg-gray-800 active:scale-95"
           >
             <Plus size={16} />
@@ -181,6 +187,12 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
                 <div key={`sk-${i}`} className="aspect-video animate-pulse bg-gray-800 rounded-lg" />
               ))}
           </div>
+        )}
+
+        {loadMoreError && (
+          <p className="text-gray-500 text-xs text-center mt-3">
+            Could not load clips. Try again.
+          </p>
         )}
       </div>
     </div>

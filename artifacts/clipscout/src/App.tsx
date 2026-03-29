@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ToastProvider } from './context/ToastContext';
+import { PlayingProvider } from './context/PlayingContext';
 import { ToastContainer } from './components/Toast';
 import { SettingsPage } from './pages/SettingsPage';
 import { HomePage } from './pages/HomePage';
@@ -64,8 +65,10 @@ function AppContent() {
 function App() {
   return (
     <ToastProvider>
-      <AppContent />
-      <ToastContainer />
+      <PlayingProvider>
+        <AppContent />
+        <ToastContainer />
+      </PlayingProvider>
     </ToastProvider>
   );
 }
