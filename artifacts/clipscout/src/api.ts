@@ -10,9 +10,8 @@ export async function fetchPexelsClips(segment: Segment, page: number): Promise<
     body: JSON.stringify({ keywords: segment.pexels_keywords, page }),
   });
   if (!res.ok) throw new Error(`Pexels proxy error: ${res.status}`);
-  const data = await res.json();
-  const items = Array.isArray(data) ? data : (data.clips ?? data.videos ?? data.results ?? []);
-  return items.slice(0, 4).map((item: Record<string, string>) => ({
+  const data: Array<{ id: string; thumbnail_url: string; media_url: string }> = await res.json();
+  return data.slice(0, 4).map((item) => ({
     id: `pexels-${item.id}-${page}`,
     segmentId: segment.id,
     source: 'pexels' as const,
