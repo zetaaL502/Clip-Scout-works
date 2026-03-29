@@ -106,8 +106,9 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         storage.addClips(segment.id, newClips);
         setClips((prev) => [...prev, ...newClips]);
       }
-    } catch {
-      addToast('error', 'Failed to load more clips.');
+    } catch (err) {
+      console.error('[SegmentCard] loadMore error:', err);
+      addToast('error', `Failed: ${(err as Error).message}`);
     } finally {
       setLoadingMore(false);
     }

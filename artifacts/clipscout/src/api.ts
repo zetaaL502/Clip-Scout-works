@@ -4,13 +4,28 @@ import { storage } from './storage';
 const PEXELS_PROXY = 'https://sauffvkpbpytzwojnopt.supabase.co/functions/v1/pexels-proxy';
 
 export async function fetchPexelsClips(segment: Segment, page: number): Promise<Clip[]> {
-  const res = await fetch(PEXELS_PROXY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keywords: segment.pexels_keywords, page }),
-  });
-  if (!res.ok) throw new Error(`Pexels proxy error: ${res.status}`);
-  const data: Array<{ id: string; thumbnail_url: string; media_url: string }> = await res.json();
+  let res: Response;
+  try {
+    res = await fetch(PEXELS_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: segment.pexels_keywords, page }),
+    });
+  } catch (networkErr) {
+    console.error('[Pexels] Network/CORS error:', networkErr);
+    throw networkErr;
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.error(`[Pexels] HTTP ${res.status}:`, errText);
+    throw new Error(`Pexels proxy error: ${res.status} — ${errText}`);
+  }
+
+  const raw = await res.text();
+  console.log('[Pexels] Raw response:', raw.slice(0, 500));
+  const data: Array<{ id: string; thumbnail_url: string; media_url: string }> = JSON.parse(raw);
+  console.log('[Pexels] Parsed items:', data.length, data[0]);
   return data.slice(0, 4).map((item) => ({
     id: `pexels-${item.id}-${page}`,
     segmentId: segment.id,
