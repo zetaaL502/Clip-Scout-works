@@ -1,0 +1,327 @@
+*MASTER BUILD DIRECTIVE: CLIPSCOUT**
+
+You are building a complete, fully functional web application called ClipScout. It is a B-roll video scouting tool for YouTube creators. The user pastes their script, the app chunks it into segments using Groq AI, fetches matching video clips from Pexels (via Supabase Edge Function proxy) and GIFs from Giphy (direct browser call) per segment, lets the user select multiple clips per segment, and downloads all selected clips as a single ZIP file.
+
+Read this entire document before writing a single line of code. Follow every instruction exactly.
+
+---
+
+**1. TECH STACK**
+* React + TypeScript + Tailwind CSS
+* One Supabase Edge Function already deployed at `https://sauffvkpbpytzwojnopt.supabase.co/functions/v1/pexels-proxy` — do NOT create or modify it, just call it
+* All other API calls (Groq, Giphy) made directly from the browser
+* Install and use client-zip npm library for ZIP export
+* All app data stored in localStorage
+* Dark mode only. Background: #0a0a0a. Cards: #111111 or #1a1a1a. Accent: #22c55e. Text: white and gray-400
+* Mobile-first. Phone screen is priority. Desktop is secondary.
+* No login, no accounts. App opens and works immediately.
+
+---
+
+**2. API KEYS SCREEN**
+
+On first launch check localStorage for:
+* `clipscout_groq_key`
+* `clipscout_giphy_key`
+
+If any are missing show a full settings screen with 2 labeled text inputs:
+* Groq API Key
+* Giphy API Key
+
+And a "Save Keys" button. Save both to localStorage on submit.
+
+Note: Pexels API key is already handled server-side in the Supabase Edge Function. The user does NOT enter it.
+
+Show a ⚙️ gear icon in the top bar at all times to reopen settings and update keys anytime.
+
+---
+
+**3. LOCALSTORAGE STRUCTURE**
+* `clipscout_project` — `{ title, fullScript }`
+* `clipscout_segments` — array of segment objects
+* `clipscout_clips` — object keyed by segmentId, value is array of clip objects
+* `clipscout_selections` — array of selected clip IDs
+* `clipscout_groq_key` — Groq API key string
+* `clipscout_giphy_key` — Giphy API key string
+
+On app load if a saved project exists in localStorage show two buttons:
+* "Resume Last Project"
+* "Start New Project"
+
+---
+
+**4. PAGE 1 — HOME / PASTE SCRIPT**
+
+Dark background #0a0a0a. Centered layout. Stacked vertically.
+
+Elements top to bottom:
+* ClipScout wordmark — large, bold, white
+* Tagline: "Paste your script. Find your B-roll. Download everything."
+* Text input: "Project name" — required, full width
+* Textarea: placeholder "Paste your full YouTube script here…", min height 250px mobile, 300px tablet, 400px desktop, resize vertical only, full width
+* Button: "Analyze Script & Find Clips →" — background #22c55e, full width on mobile, rounded-xl, large text, scale-95 on press
+
+Validation before submit:
+* Project name must not be empty → show red error text below field
+* Script must be at least 200 characters → show red error text below field
+
+Loading state after submit:
+* Disable button, show spinner inside button
+* Cycle through these status messages every 2 seconds:
+  - "Reading your script…"
+  - "Splitting into segments…"
+  - "Generating search keywords…"
+  - "Almost ready…"
+
+On success: save project to localStorage, navigate to Page 2
+On any error: red toast notification + re-enable the submit button
+
+---
+
+**5. GROQ — SCRIPT CHUNKING**
+
+Call Groq directly from the browser:
+* Endpoint: `https://api.groq.com/openai/v1/chat/completions`
+* Header: `Authorization: Bearer {clipscout_groq_key}`
+* Model: `llama-3.3-70b-versatile`
+* `response_format: { type: "json_object" }`
+* Timeout: 15 seconds. If timeout: red toast "Groq timed out. Please try again." + re-enable button
+
+Use exactly this prompt, inserting the full script where it says {{SCRIPT}}:
+
+```
+You are a video production assistant helping a YouTube creator scout B-roll footage for a long-form video.
+
+Read the full script carefully. Split it into logical segments of approximately 50–75 words each. Aim for 20–35 segments total. Never cut mid-sentence. Never make a segment shorter than 30 words or longer than 100 words.
+
+For each segment generate:
+- "pexels_keywords": 3–5 specific visual words describing cinematic, landscape, nature, or action footage. Example: "busy city street night rain"
+- "giphy_keywords": 2–3 words for a fun expressive GIF. Example: "mind blown"
+- "duration_estimate": estimated speaking time e.g. "~15 seconds"
+
+Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
+{
+  "segments": [
+    {
+      "order_index": 1,
+      "text_body": "exact script text for this segment",
+      "pexels_keywords": "keywords here",
+      "giphy_keywords": "giphy search terms",
+      "duration_estimate": "~15 seconds"
+    }
+  ]
+}
+
+Full script:
+{{SCRIPT}}
+```
+
+After receiving the response:
+* Parse the JSON
+* Assign a unique local ID to each segment
+* Save all segments to localStorage under `clipscout_segments`
+* Navigate to Page 2
+
+---
+
+**6. VIDEO FETCHING FUNCTIONS**
+
+**Pexels (via Supabase Edge Function — already deployed):**
+* Call: POST `https://sauffvkpbpytzwojnopt.supabase.co/functions/v1/pexels-proxy`
+* Headers: `{ "Content-Type": "application/json" }`
+* Body: `{ "keywords": string, "page": number }`
+* Returns array of: `{ id, thumbnail_url, media_url }`
+
+**Giphy (direct browser call):**
+* Endpoint: `https://api.giphy.com/v1/gifs/search`
+* Params: `api_key={clipscout_giphy_key}&q={keywords}&limit=4&offset={(page-1)*4}&rating=g`
+* Extract per result: `id`, `images.fixed_height_still.url` (thumbnail), `images.original.gif` (gif URL)
+* Returns array of: `{ id, thumbnail_url, media_url }`
+
+Both functions must return a consistent clip object shape:
+```typescript
+{
+  id: string,
+  segmentId: string,
+  source: 'pexels' | 'giphy',
+  thumbnail_url: string,
+  media_url: string
+}
+```
+
+---
+
+**7. PAGE 2 — DIRECTOR'S GRID**
+
+**Sticky top bar (always visible while scrolling):**
+* Left: ← Back (goes to Page 1)
+* Center: ClipScout wordmark
+* Right: ⬇ Export ZIP (X selected) — green #22c55e, disabled and grayed out until at least 1 clip is selected. Show total selected clip count on the button.
+
+**Progress indicator directly below top bar:**
+* Text: "X of Y segments have clips selected"
+* Green progress bar full width fills proportionally
+
+---
+
+**8. SEGMENT CARDS — CRITICAL, READ EVERY WORD**
+
+Segment cards stack vertically, one per segment, full width. Each card is a completely self-contained unit with its own independent state.
+
+Card structure:
+```
+┌──────────────────────────────────────────┐
+│  SEGMENT 3 of 27              ~15 seconds │
+│──────────────────────────────────────────│
+│  "The script text for this segment goes  │
+│   here and wraps naturally..."           │
+│──────────────────────────────────────────│
+│              [＋ Add 4 More ▾]           │
+│──────────────────────────────────────────│
+│  [clip]  [clip]                          │
+│  [clip]  [clip]                          │
+│  ... more clips appended below ...       │
+└──────────────────────────────────────────┘
+```
+
+**Initial clip loading:**
+* When Page 2 first renders, automatically fetch 4 Pexels clips for the FIRST 5 segments in parallel using each segment's `pexels_keywords`
+* Use Intersection Observer API to detect when remaining segment cards enter the viewport and lazy-load their clips at that moment
+* Never fetch all segments at once on page load
+* While fetching show exactly 4 skeleton loader boxes: `animate-pulse bg-gray-800 rounded-lg` in the 2-column grid
+
+**"＋ Add 4 More ▾" button — CRITICAL BEHAVIOR:**
+* On click: show a small dropdown directly below the button with exactly two options: **"Pexels"** and **"Giphy"**
+* Each segment independently tracks two page counters: `pexels_page` (starts at 1, already used for initial load) and `giphy_page` (starts at 0)
+* User picks **Pexels**:
+  - Increment THIS segment's `pexels_page` by 1
+  - Call pexels-proxy with THIS segment's `pexels_keywords` and new page number
+  - Append the 4 returned clips to the BOTTOM of THIS segment's clip grid only
+  - No other segment is affected. No page refresh. No re-render of other segments.
+* User picks **Giphy**:
+  - Increment THIS segment's `giphy_page` by 1
+  - Call Giphy directly with THIS segment's `giphy_keywords` and new page number
+  - Append the 4 returned GIFs to the BOTTOM of THIS segment's clip grid only
+  - No other segment is affected. No page refresh. No re-render of other segments.
+* User picks **Pexels again**:
+  - Increment `pexels_page` again, fetch next 4 Pexels clips, append below existing
+* User picks **Giphy again**:
+  - Increment `giphy_page` again, fetch next 4 Giphy GIFs, append below existing
+* While loading new clips: show 4 skeleton loaders at the bottom of ONLY that segment's grid
+* After each "Add 4 More" click: disable the button for 3 seconds, show countdown "Wait 2s…"
+* The rest of the page must NOT reload, refresh, or re-render. Only that segment's clip grid updates.
+
+**Clip grid layout:**
+* 2 columns on mobile (<640px)
+* 4 columns on desktop (>1024px)
+* Each clip cell: thumbnail image, 16:9 aspect ratio, object-cover, loading="lazy"
+* On hover: show semi-transparent dark overlay with white play icon centered
+* Min touch target: 44x44px
+
+**Clip selection:**
+* Multiple clips can be selected per segment
+* Clicking an unselected clip: adds green border (border-4 border-green-500 rounded-lg) + green checkmark badge top-right corner. Adds clip ID to `clipscout_selections` in localStorage.
+* Clicking a selected clip: removes green border and checkmark. Removes clip ID from `clipscout_selections` in localStorage.
+* Selection state persists in localStorage and survives page refresh
+
+---
+
+**9. EXPORT ZIP — CLIENT SIDE**
+
+When user clicks Export ZIP:
+1. Read all selected clip IDs from `clipscout_selections` in localStorage
+2. Match each ID to its clip object from `clipscout_clips`
+3. Sort clips by their segment's `order_index`
+4. Show a full-screen dark overlay with:
+   - Text: "Preparing your clips…"
+   - Progress bar: "Downloading X of Y"
+5. For each selected clip fetch the `media_url` directly using browser fetch() to get the blob
+6. Generate a `script.txt` file from the full script text
+7. Use client-zip to bundle everything:
+   - Video files named: `01_scene.mp4`, `02_scene.mp4` (zero-padded)
+   - GIF files named: `03_scene.gif` etc.
+   - `script.txt` in the root of the zip
+8. Trigger browser download of `clipscout_export.zip`
+9. On any single clip download error: red toast "Clip [N] failed, skipping" — continue downloading the rest
+10. Dismiss overlay when complete
+11. Show green toast: "Export ready! Downloading now…"
+
+---
+
+**10. TOAST NOTIFICATION SYSTEM**
+
+Global toast component triggerable from anywhere in the app.
+* Position: bottom-center on mobile, bottom-right on desktop
+* Types: success (green #22c55e), error (red #ef4444), info (gray #6b7280)
+* Auto-dismiss after 4 seconds
+* Max 3 toasts visible at once, stack vertically
+* Slide-in animation on appear, fade-out on dismiss
+
+Toast messages:
+* ✅ "Script analyzed! X segments created."
+* ✅ "Export ready! Downloading now…"
+* ❌ "Script analysis failed. Please try again."
+* ❌ "Groq timed out. Please try again."
+* ❌ "No clips found for this segment."
+* ❌ "Clip [N] failed to download, skipping."
+* ❌ "No internet connection detected."
+
+---
+
+**11. ERROR HANDLING**
+
+| Scenario | What to show |
+|---|---|
+| Groq API fails | Red toast + re-enable submit button |
+| Groq times out 15s | Red toast "Groq timed out. Please try again." + re-enable button |
+| Pexels returns 0 results | Gray text inside card: "No clips found. Try Add 4 More." |
+| Giphy returns 0 results | Same as above |
+| Network offline | Red toast "No internet connection detected." |
+| Export clip fails | Red toast per clip "Clip [N] failed, skipping." Continue rest. |
+| API key missing on load | Redirect to settings screen |
+
+---
+
+**12. MOBILE-FIRST RULES — NON NEGOTIABLE**
+* Every button and clip card: minimum 44x44px touch target
+* Body text: minimum 16px. Never below 14px anywhere
+* All cards: minimum 16px padding mobile, 24px tablet, 32px desktop
+* All buttons: scale-95 press state
+* No horizontal scrolling on any screen width ever
+* Sticky top bar always visible while scrolling on Page 2
+* All thumbnails: loading="lazy"
+* iOS safe area: `padding-bottom: env(safe-area-inset-bottom)`
+* Smooth scroll: `will-change: transform` on segment card list
+
+---
+
+**13. RESPONSIVE BREAKPOINTS**
+
+| Element | Mobile <640px | Tablet 640–1024px | Desktop >1024px |
+|---|---|---|---|
+| Clip grid columns | 2 | 2 | 4 |
+| Card padding | 16px | 24px | 32px |
+| Textarea height | 250px | 300px | 400px |
+| Export button | full width | auto | auto |
+
+---
+
+**14. BUILD ORDER — FOLLOW EXACTLY**
+1. API keys settings screen + localStorage save/load
+2. Toast notification system
+3. Page 1: Home + script input + validation
+4. Groq integration + script chunking + localStorage save
+5. Pexels fetch function (calls `https://sauffvkpbpytzwojnopt.supabase.co/functions/v1/pexels-proxy`)
+6. Giphy fetch function (direct browser call)
+7. Segment Card component with independent `pexels_page` and `giphy_page` counters
+8. Clip Grid with multi-select toggle + localStorage sync
+9. "Add 4 More" dropdown with per-segment append logic
+10. Page 2: Director's Grid + Intersection Observer lazy loading
+11. Export ZIP logic using client-zip
+12. Wire all routing and global state
+13. Test full flow end to end
+
+---
+
+**FINAL INSTRUCTION:** Build ClipScout exactly as described above. Start with Step 1 and proceed in order. Do not skip, simplify, or abbreviate any feature. Every detail in this document must be implemented. If you reach your output limit, stop cleanly at the end of a logical step and wait for "continue."
+

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "ClipScout"
+version = "1.0.0"
+id = "artifacts/clipscout"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24168
+
+[services.development]
+run = "pnpm --filter @workspace/clipscout run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/clipscout", "run", "build" ]
+publicDir = "artifacts/clipscout/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24168"
+BASE_PATH = "/"
