@@ -28,13 +28,25 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const loadedRef = useRef(isPreloaded && initialClips.length > 0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Tracks which word index to use for the next "Add 4 More → Pexels" attempt
+  const pexelsWordIndexRef = useRef(0);
 
-  // Initial clip load — no timeout, let it run until complete or error.
+  // Initial clip load — max 40 second hard timeout.
   // If 0 results, retry once with first 2 words of keywords.
   const loadInitialClips = useCallback(async () => {
     if (loadedRef.current) return;
     loadedRef.current = true;
     setLoadingInitial(true);
+
+    let resolved = false;
+
+    const hardTimeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        setLoadingInitial(false);
+      }
+    }, 40000);
+
     try {
       let newClips = await fetchPexelsClips(segment, 1);
 
@@ -45,15 +57,21 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         newClips = await fetchPexelsClips(retrySegment, 1);
       }
 
-      if (newClips.length > 0) {
-        storage.addClips(segment.id, newClips);
-        setClips(newClips);
+      clearTimeout(hardTimeout);
+      if (!resolved) {
+        resolved = true;
+        if (newClips.length > 0) {
+          storage.addClips(segment.id, newClips);
+          setClips(newClips);
+        }
+        setLoadingInitial(false);
       }
-      // If still 0, falls through to show "No clips found"
     } catch {
-      // On error, show "No clips found" — user can use Add 4 More
-    } finally {
-      setLoadingInitial(false);
+      clearTimeout(hardTimeout);
+      if (!resolved) {
+        resolved = true;
+        setLoadingInitial(false);
+      }
     }
   }, [segment]);
 
@@ -99,19 +117,25 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
       });
     }, 1000);
 
-    // 15 second timeout for Add 4 More only
+    // 20s timeout for Pexels, 15s for Giphy
+    const timeoutMs = source === 'pexels' ? 20000 : 15000;
+    let timedOut = false;
     const timeoutId = setTimeout(() => {
+      timedOut = true;
       setLoadingMore(false);
       setLoadMoreError(true);
-    }, 15000);
+    }, timeoutMs);
 
     try {
       let newClips: Clip[] = [];
       if (source === 'pexels') {
+        // Cycle through individual words from the keywords on each attempt
+        // so each "Add 4 More → Pexels" click uses a fresh unrelated single word
+        const words = segment.pexels_keywords.split(' ').filter((w) => w.length > 0);
+        const keyword = words[pexelsWordIndexRef.current % words.length];
+        pexelsWordIndexRef.current += 1;
         const nextPage = pexelsPage + 1;
-        // Use single broad keyword for better results on Add 4 More
-        const broadKeyword = segment.pexels_keywords.split(' ')[0];
-        const broadSegment = { ...segment, pexels_keywords: broadKeyword };
+        const broadSegment = { ...segment, pexels_keywords: keyword };
         newClips = await fetchPexelsClips(broadSegment, nextPage);
         setPexelsPage(nextPage);
       } else {
@@ -119,17 +143,23 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
         newClips = await fetchGiphyClips(segment, nextPage);
         setGiphyPage(nextPage);
       }
-      clearTimeout(timeoutId);
 
-      if (newClips.length > 0) {
-        storage.addClips(segment.id, newClips);
-        setClips((prev) => [...prev, ...newClips]);
+      clearTimeout(timeoutId);
+      if (!timedOut) {
+        if (newClips.length > 0) {
+          storage.addClips(segment.id, newClips);
+          setClips((prev) => [...prev, ...newClips]);
+        } else {
+          setLoadMoreError(true);
+        }
       }
     } catch {
       clearTimeout(timeoutId);
-      setLoadMoreError(true);
+      if (!timedOut) {
+        setLoadMoreError(true);
+      }
     } finally {
-      setLoadingMore(false);
+      if (!timedOut) setLoadingMore(false);
     }
   }
 
@@ -204,7 +234,7 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
 
         {loadMoreError && (
           <p className="text-gray-500 text-xs text-center mt-3">
-            Could not load clips. Try again.
+            Could not find clips. Try Add 4 More again.
           </p>
         )}
       </div>
