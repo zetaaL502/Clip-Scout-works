@@ -100,7 +100,6 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
           <Settings size={22} />
         </button>
       </div>
-
       <div className="flex-1 flex flex-col items-center justify-center px-4 pb-8">
         <div className="w-full max-w-xl">
           <h1 className="text-5xl font-black text-white tracking-tight mb-3">ClipScout</h1>
@@ -145,7 +144,7 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="w-full bg-[#22c55e] hover:bg-[#16a34a] disabled:bg-[#16a34a]/60 text-white font-bold py-4 rounded-xl text-lg transition-colors active:scale-95 flex items-center justify-center gap-3"
+              className="w-full hover:bg-[#16a34a] disabled:bg-[#16a34a]/60 text-white font-bold py-4 rounded-xl text-lg transition-colors active:scale-95 flex items-center justify-center gap-3 bg-[#161ba3]"
             >
               {loading ? (
                 <>
