@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { Check, Play, Pause, SquareCheck } from 'lucide-react';
 import type { Clip } from '../types';
 import { storage } from '../storage';
@@ -8,10 +8,11 @@ interface Props {
   clip: Clip;
   isSelected: boolean;
   animIndex: number;
-  onSelectionChange: () => void;
+  bulkSelectNonce: number;
+  onSelectionChange: (nextSelections?: string[]) => void;
 }
 
-export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Props) {
+function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, onSelectionChange }: Props) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -20,8 +21,16 @@ export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Pro
   const { playingId, setPlayingId } = usePlaying();
   const isGif = clip.source === 'giphy';
 
-  // Stagger delay: applied when selecting (going to selected), instant when deselecting
-  const staggerDelay = isSelected ? `${Math.min(animIndex * 50, 200)}ms` : '0ms';
+  // Only cascade when Select All is clicked (bulkSelectNonce changes).
+  const lastBulkSelectNonceRef = useRef<number>(bulkSelectNonce);
+  const cascadeEnabled = lastBulkSelectNonceRef.current !== bulkSelectNonce;
+  useEffect(() => {
+    lastBulkSelectNonceRef.current = bulkSelectNonce;
+  }, [bulkSelectNonce]);
+
+  // Stagger delay: applied when selecting as part of bulk-select.
+  // 40ms per card fits the 30-50ms requirement while staying fast.
+  const staggerDelay = isSelected && cascadeEnabled ? `${Math.min(animIndex * 40, 2000)}ms` : '0ms';
 
   // When a different clip starts playing, stop this one
   useEffect(() => {
@@ -36,8 +45,8 @@ export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Pro
 
   function handleSelect(e: React.MouseEvent) {
     e.stopPropagation();
-    storage.toggleSelection(clip.id);
-    onSelectionChange();
+    const nextSelections = storage.toggleSelection(clip.id);
+    onSelectionChange(nextSelections);
   }
 
   function handlePlayPause(e: React.MouseEvent) {
@@ -72,9 +81,10 @@ export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Pro
 
   return (
     <div
-      className="relative rounded-lg overflow-hidden bg-gray-800 aspect-video group"
+      className={`relative rounded-lg overflow-hidden bg-gray-800 aspect-video group border-4 transition-colors ${
+        isSelected ? 'border-green-500' : 'border-transparent'
+      }`}
       style={{
-        border: isSelected ? '3px solid #22c55e' : '3px solid transparent',
         minHeight: '44px',
         minWidth: '44px',
         transition: 'border-color 180ms ease',
@@ -90,6 +100,7 @@ export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Pro
           src={clip.thumbnail_url}
           alt=""
           loading="lazy"
+          decoding="async"
           className={`w-full h-full object-cover transition-opacity ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setImgLoaded(true)}
           onError={() => setImgError(true)}
@@ -106,6 +117,8 @@ export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Pro
         <img
           src={clip.media_url}
           alt=""
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover"
         />
       )}
@@ -187,3 +200,5 @@ export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Pro
     </div>
   );
 }
+
+export const ClipCard = memo(ClipCardImpl);

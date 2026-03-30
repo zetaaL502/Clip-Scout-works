@@ -2,28 +2,91 @@ import type { Clip, Segment } from './types';
 import { storage } from './storage';
 
 const PEXELS_PROXY = '/api/pexels-proxy';
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function fetchPexelsClips(segment: Segment, page: number, signal?: AbortSignal): Promise<Clip[]> {
-  const res = await fetch(PEXELS_PROXY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keywords: segment.pexels_keywords, page }),
-    signal,
-  });
+  const keywords = (segment.pexels_keywords ?? '').trim();
+  if (!keywords) return [];
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Pexels proxy error: ${res.status} — ${errText}`);
-  }
-
-  const data: Array<{ id: string; thumbnail_url: string; media_url: string }> = await res.json();
-  return data.slice(0, 4).map((item) => ({
+  const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string }>) =>
+    data.slice(0, 4).map((item) => ({
     id: `pexels-${item.id}-${page}`,
     segmentId: segment.id,
     source: 'pexels' as const,
     thumbnail_url: item.thumbnail_url,
     media_url: item.media_url,
-  }));
+    }));
+
+  try {
+    const res = await fetch(PEXELS_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords, page }),
+      signal,
+    });
+
+    if (res.ok) {
+      const data: Array<{ id: string; thumbnail_url: string; media_url: string }> = await res.json();
+      return mapClips(data);
+    }
+  } catch {
+    // Swallow proxy network errors and try client-side fallback below.
+  }
+
+  const pexelsKey = storage.getPexelsKey().trim();
+  if (!pexelsKey) {
+    throw new Error('Pexels unavailable: server proxy failed and no fallback key in Settings.');
+  }
+
+  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=4&page=${page}`;
+  let directRes: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      directRes = await fetch(url, {
+        headers: { Authorization: pexelsKey },
+        signal,
+      });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e;
+      if (attempt === 1) throw e;
+      await delay(300);
+      continue;
+    }
+
+    if (directRes.ok) break;
+    if (!RETRYABLE_STATUS.has(directRes.status) || attempt === 1) {
+      const errText = await directRes.text().catch(() => '');
+      throw new Error(`Pexels fallback error: ${directRes.status} — ${errText}`);
+    }
+    await delay(300);
+  }
+  if (!directRes?.ok) {
+    throw new Error('Pexels fallback failed after retry.');
+  }
+
+  const directData = (await directRes.json()) as {
+    videos: Array<{
+      id: number;
+      image: string;
+      video_files: Array<{ quality: string; link: string; file_type: string }>;
+    }>;
+  };
+  const normalized = (directData.videos ?? []).map((video) => {
+    const hdFile =
+      video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
+      video.video_files.find((f) => f.file_type === 'video/mp4') ??
+      video.video_files[0];
+    return {
+      id: String(video.id),
+      thumbnail_url: video.image,
+      media_url: hdFile?.link ?? '',
+    };
+  });
+  return mapClips(normalized);
 }
 
 export async function fetchGiphyClips(segment: Segment, page: number): Promise<Clip[]> {

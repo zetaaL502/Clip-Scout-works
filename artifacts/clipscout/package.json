@@ -75,6 +75,10 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "client-zip": "^2.5.0"
+    "@esbuild/win32-x64": "^0.27.3",
+    "@rollup/rollup-win32-x64-msvc": "^4.60.0",
+    "@tailwindcss/oxide-win32-x64-msvc": "^4.2.2",
+    "client-zip": "^2.5.0",
+    "lightningcss-win32-x64-msvc": "^1.32.0"
   }
 }

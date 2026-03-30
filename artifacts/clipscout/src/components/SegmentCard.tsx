@@ -3,6 +3,7 @@ import { Plus, ChevronDown } from 'lucide-react';
 import { ClipCard } from './ClipCard';
 import { storage } from '../storage';
 import { fetchPexelsClips, fetchGiphyClips } from '../api';
+import { useToastCtx } from '../context/ToastContext';
 import type { Clip, Segment } from '../types';
 
 interface Props {
@@ -11,15 +12,18 @@ interface Props {
   total: number;
   initialClips: Clip[];
   isPreloaded: boolean;
-  onSelectionChange: () => void;
+  selectedSet: Set<string>;
+  bulkSelectNonce: number;
+  onSelectionChange: (nextSelections?: string[]) => void;
 }
 
 // Builds an ordered list of keyword combos to try for "Add 4 More → Pexels".
 // Example: "busy city street night rain" →
 //   ["busy", "busy city", "city", "city street", "street", "street night", "night", "night rain", "rain"]
-function buildPexelsRetryCombos(keywords: string): string[] {
-  const words = keywords.split(' ').filter((w) => w.length > 0);
-  if (words.length === 0) return [keywords];
+function buildPexelsRetryCombos(keywords?: string | null): string[] {
+  const kw = keywords ?? '';
+  const words = kw.split(' ').filter((w) => w.length > 0);
+  if (words.length === 0) return [kw];
   const combos: string[] = [];
   for (let i = 0; i < words.length; i++) {
     combos.push(words[i]);
@@ -30,7 +34,17 @@ function buildPexelsRetryCombos(keywords: string): string[] {
   return combos;
 }
 
-export function SegmentCard({ segment, index, total, initialClips, isPreloaded, onSelectionChange }: Props) {
+export function SegmentCard({
+  segment,
+  index,
+  total,
+  initialClips,
+  isPreloaded,
+  selectedSet,
+  bulkSelectNonce,
+  onSelectionChange,
+}: Props) {
+  const { addToast } = useToastCtx();
   const [clips, setClips] = useState<Clip[]>(initialClips);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
@@ -83,7 +97,11 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
 
       if (!controller.signal.aborted && newClips.length === 0) {
         // Retry once with the first 2 words of the keywords
-        const simplified = segment.pexels_keywords.split(' ').slice(0, 2).join(' ');
+        const simplified = (segment.pexels_keywords ?? '')
+          .split(' ')
+          .filter((w) => w.length > 0)
+          .slice(0, 2)
+          .join(' ');
         const retrySegment = { ...segment, pexels_keywords: simplified };
         newClips = await fetchPexelsClips(retrySegment, 1, controller.signal);
       }
@@ -182,9 +200,17 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
           setLoadMoreError(true);
         }
       }
-    } catch {
+    } catch (err) {
       clearTimeout(timeoutId);
       if (!timedOut) {
+        if (source === 'pexels') {
+          const msg = (err as Error)?.message ?? '';
+          if (msg.includes('no fallback key')) {
+            addToast('error', 'Pexels failed: add Pexels key in Settings for fallback.');
+          } else {
+            addToast('error', 'Pexels request failed. Please try again.');
+          }
+        }
         setLoadMoreError(true);
       }
     } finally {
@@ -251,8 +277,15 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
           </p>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {clips.map((clip) => (
-              <ClipCard key={clip.id} clip={clip} onSelectionChange={onSelectionChange} />
+            {clips.map((clip, clipIndex) => (
+              <ClipCard
+                key={clip.id}
+                clip={clip}
+                isSelected={selectedSet.has(clip.id)}
+                animIndex={clipIndex}
+                bulkSelectNonce={bulkSelectNonce}
+                onSelectionChange={onSelectionChange}
+              />
             ))}
             {loadingMore &&
               skeletons.map((_, i) => (

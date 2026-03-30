@@ -11,6 +11,7 @@ interface Props {
 export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
   const [groqKey, setGroqKey] = useState(storage.getGroqKey());
   const [giphyKey, setGiphyKey] = useState(storage.getGiphyKey());
+  const [pexelsKey, setPexelsKey] = useState(storage.getPexelsKey());
   const { addToast } = useToastCtx();
 
   function handleSave() {
@@ -20,6 +21,7 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
     }
     storage.setGroqKey(groqKey.trim());
     storage.setGiphyKey(giphyKey.trim());
+    storage.setPexelsKey(pexelsKey.trim());
     addToast('success', 'API keys saved!');
     onSave();
   }
@@ -68,8 +70,24 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
             <p className="mt-1 text-xs text-gray-500">Used to fetch GIFs for each segment</p>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Pexels API Key (optional fallback)
+            </label>
+            <input
+              type="password"
+              value={pexelsKey}
+              onChange={(e) => setPexelsKey(e.target.value)}
+              placeholder="Your Pexels API key"
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Used only when server proxy is unavailable.
+            </p>
+          </div>
+
           <p className="text-xs text-gray-500">
-            Pexels API is handled server-side. You do not need to enter it.
+            Pexels usually runs via server proxy. Optional key enables client fallback.
           </p>
 
           <button

@@ -7,6 +7,7 @@ const KEYS = {
   SELECTIONS: 'clipscout_selections',
   GROQ_KEY: 'clipscout_groq_key',
   GIPHY_KEY: 'clipscout_giphy_key',
+  PEXELS_KEY: 'clipscout_pexels_key',
 };
 
 function get<T>(key: string): T | null {
@@ -27,6 +28,8 @@ export const storage = {
   setGroqKey: (k: string) => localStorage.setItem(KEYS.GROQ_KEY, k),
   getGiphyKey: () => localStorage.getItem(KEYS.GIPHY_KEY) ?? '',
   setGiphyKey: (k: string) => localStorage.setItem(KEYS.GIPHY_KEY, k),
+  getPexelsKey: () => localStorage.getItem(KEYS.PEXELS_KEY) ?? '',
+  setPexelsKey: (k: string) => localStorage.setItem(KEYS.PEXELS_KEY, k),
 
   getProject: () => get<Project>(KEYS.PROJECT),
   setProject: (p: Project) => set(KEYS.PROJECT, p),
