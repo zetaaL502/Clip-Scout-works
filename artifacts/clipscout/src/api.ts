@@ -45,9 +45,11 @@ export async function fetchGiphyClips(segment: Segment, page: number): Promise<C
   });
 }
 
+type RawSegment = Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>;
+
 const GROQ_PROMPT = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
-CRITICAL RULE: You MUST cover the ENTIRE script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part of the script. Every single sentence must appear in exactly one segment. If the script is long, create as many segments as needed — 40, 50, 60, or more is fine.
+CRITICAL RULE: You MUST cover the ENTIRE script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part of the script. Every single sentence must appear in exactly one segment. Create as many segments as needed.
 
 Instructions:
 - Split the full script into logical segments of approximately 50–75 words each.
@@ -76,10 +78,10 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script:
 ${script}`;
 
-export async function analyzeScript(script: string): Promise<Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>[]> {
+// Makes a single Groq API call for one chunk of the script.
+async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
   const apiKey = storage.getGroqKey();
   const controller = new AbortController();
-  // 90 second timeout — long scripts with many segments need time to generate
   const timeout = setTimeout(() => controller.abort(), 90000);
 
   try {
@@ -92,8 +94,8 @@ export async function analyzeScript(script: string): Promise<Omit<Segment, 'id' 
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         response_format: { type: 'json_object' },
-        max_tokens: 8192,
-        messages: [{ role: 'user', content: GROQ_PROMPT(script) }],
+        max_tokens: 8000,
+        messages: [{ role: 'user', content: GROQ_PROMPT(scriptChunk) }],
       }),
       signal: controller.signal,
     });
@@ -111,9 +113,43 @@ export async function analyzeScript(script: string): Promise<Omit<Segment, 'id' 
     return parsed.segments ?? [];
   } catch (e) {
     clearTimeout(timeout);
-    if ((e as Error).name === 'AbortError') {
-      throw new Error('TIMEOUT');
-    }
+    if ((e as Error).name === 'AbortError') throw new Error('TIMEOUT');
     throw e;
   }
+}
+
+// Finds a good sentence boundary split point near the middle of the script.
+// Returns the index just after a period+space near the midpoint.
+function findSplitPoint(script: string): number {
+  const mid = Math.floor(script.length / 2);
+  // Search forward from midpoint for a ". " boundary
+  const forward = script.indexOf('. ', mid);
+  if (forward !== -1) return forward + 2; // after ". "
+  // Fallback: search backward
+  const backward = script.lastIndexOf('. ', mid);
+  if (backward !== -1) return backward + 2;
+  // No good split found — return mid
+  return mid;
+}
+
+export async function analyzeScript(script: string): Promise<RawSegment[]> {
+  const wordCount = script.trim().split(/\s+/).length;
+
+  // For long scripts, split into two halves and make two parallel Groq calls.
+  // This avoids hitting the max_tokens output limit and getting a truncated response.
+  if (wordCount > 1200) {
+    const splitAt = findSplitPoint(script);
+    const firstHalf = script.slice(0, splitAt).trim();
+    const secondHalf = script.slice(splitAt).trim();
+
+    // Run both halves in parallel
+    const [firstSegs, secondSegs] = await Promise.all([
+      callGroq(firstHalf),
+      callGroq(secondHalf),
+    ]);
+
+    return [...firstSegs, ...secondSegs];
+  }
+
+  return callGroq(script);
 }

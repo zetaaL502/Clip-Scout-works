@@ -20,8 +20,19 @@ export function GridPage({ onBack, onSettings }: Props) {
   const [selections, setSelections] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
+  const [scrollProgress, setScrollProgress] = useState(0);
   const project = storage.getProject();
   const hasPreloaded = useRef(false);
+
+  useEffect(() => {
+    function onScroll() {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      setScrollProgress(docHeight > 0 ? scrollTop / docHeight : 0);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     const segs = storage.getSegments();
@@ -143,6 +154,13 @@ export function GridPage({ onBack, onSettings }: Props) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
+      {/* Scroll progress indicator — fixed right edge */}
+      <div className="fixed right-0 top-0 bottom-0 w-1 bg-gray-800 z-50 pointer-events-none">
+        <div
+          className="w-full bg-[#22c55e]"
+          style={{ height: `${scrollProgress * 100}%`, transition: 'height 50ms linear' }}
+        />
+      </div>
       <div className="sticky top-0 z-30 bg-[#0a0a0a]/95 backdrop-blur border-b border-gray-800">
         <div className="flex items-center justify-between px-4 py-3 sm:px-6">
           <button

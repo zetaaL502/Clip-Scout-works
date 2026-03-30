@@ -1,0 +1,24 @@
+OK let me analyze your script first and then give you the prompt.
+
+Looking at your script — it ends with "see you at the next one" — and it stopped at "all based on calculations" which is roughly **65% through the script**. So it's cutting off about 35% of your script.
+
+Now paste this in Replit:
+
+---
+
+> "Fix these 3 things only. Do not touch anything else.
+>
+> **Fix 1 — Script not fully analyzed:**
+> The Groq analysis is cutting off the script at around 65% and not finishing. The script ends with 'see you at the next one' but segments are stopping around 'all based on calculations'. Fix the Groq call so it sends the COMPLETE script text without any truncation or character limit. If the script is too long for one Groq call, split it into two calls and combine the segments. Every single word from the first sentence to the last sentence must be covered by a segment. Do not stop early under any circumstance.
+>
+> **Fix 2 — Segments 2, 3, 4, 5 loading forever:**
+> Specifically segments 2, 3, 4, 5 keep spinning forever. These early segments are likely firing their fetch calls before the page is fully ready or before the Intersection Observer is properly set up. Fix this by ensuring every segment including the first 5 has its own independent 40 second timeout timer that starts exactly when that segment's fetch begins. If 0 results or timeout or any error → immediately stop skeleton loader and show 'Clips not found. Try Add 4 More.' No segment should ever spin past 40 seconds.
+>
+> **Fix 3 — Add a scroll progress indicator:**
+> Add a thin vertical progress bar on the right side of the screen that shows how far down the page the user has scrolled. This is called a scroll indicator. It should be fixed to the right edge of the screen, full height, thin (4px wide), dark gray background with a green fill that grows as the user scrolls down. This helps users know how far through the segments they are.
+>
+> Do not touch Giphy, GIF preview, Select All, Export ZIP, video preview, home page, settings, or anything else."
+
+---
+
+🔥

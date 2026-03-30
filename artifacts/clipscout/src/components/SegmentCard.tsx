@@ -48,6 +48,21 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const pexelsRetryIndexRef = useRef(0);
   const pexelsRetryCombos = useRef(buildPexelsRetryCombos(segment.pexels_keywords));
 
+  // Fix for segments 2–5 spinning forever:
+  // GridPage's async preload may resolve AFTER the IntersectionObserver runs its
+  // early-return check (isPreloaded && initialClips.length > 0). When that happens
+  // the observer is gone but clips/loadingInitial state are still at their initial
+  // empty values. Sync them explicitly the moment preloaded clips arrive.
+  useEffect(() => {
+    if (isPreloaded && initialClips.length > 0 && !loadedRef.current) {
+      loadedRef.current = true;
+      setClips(initialClips);
+      setLoadingInitial(false);
+    }
+    // Only re-run when preload status or clip count changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreloaded, initialClips.length]);
+
   // Initial clip load — hard 40 second timeout per segment.
   // Uses AbortController so the actual network request is cancelled on timeout,
   // not just ignored. Any path (success, 0 results, abort, error) clears the skeleton.
