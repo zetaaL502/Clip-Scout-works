@@ -19,11 +19,9 @@ interface Props {
 
 export function HomePage({ onAnalyzed, onSettings }: Props) {
   const { addToast } = useToastCtx();
-  const [projectName, setProjectName] = useState('');
   const [script, setScript] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusIdx, setStatusIdx] = useState(0);
-  const [projectNameError, setProjectNameError] = useState('');
   const [scriptError, setScriptError] = useState('');
   const [hasProject, setHasProject] = useState(false);
   const statusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -49,20 +47,12 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
   }, [loading]);
 
   function validate(): boolean {
-    let valid = true;
-    if (!projectName.trim()) {
-      setProjectNameError('Project name is required.');
-      valid = false;
-    } else {
-      setProjectNameError('');
-    }
     if (script.trim().length < 200) {
       setScriptError('Script must be at least 200 characters.');
-      valid = false;
-    } else {
-      setScriptError('');
+      return false;
     }
-    return valid;
+    setScriptError('');
+    return true;
   }
 
   async function handleSubmit() {
@@ -82,7 +72,7 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
         giphy_page: 0,
       }));
 
-      storage.setProject({ title: projectName.trim(), fullScript: script });
+      storage.setProject({ title: 'ClipScout Project', fullScript: script });
       storage.setSegments(segments);
 
       addToast('success', `Script analyzed! ${segments.length} segments created.`);
@@ -139,20 +129,6 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
           )}
 
           <div className="space-y-4">
-            <div>
-              <input
-                type="text"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="Project name"
-                className="w-full bg-[#111] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
-                disabled={loading}
-              />
-              {projectNameError && (
-                <p className="mt-1 text-sm text-red-500">{projectNameError}</p>
-              )}
-            </div>
-
             <div>
               <textarea
                 value={script}

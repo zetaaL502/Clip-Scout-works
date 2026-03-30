@@ -6,11 +6,12 @@ import { usePlaying } from '../context/PlayingContext';
 
 interface Props {
   clip: Clip;
+  isSelected: boolean;
+  animIndex: number;
   onSelectionChange: () => void;
 }
 
-export function ClipCard({ clip, onSelectionChange }: Props) {
-  const [selected, setSelected] = useState(() => storage.isSelected(clip.id));
+export function ClipCard({ clip, isSelected, animIndex, onSelectionChange }: Props) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -18,6 +19,9 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { playingId, setPlayingId } = usePlaying();
   const isGif = clip.source === 'giphy';
+
+  // Stagger delay: applied when selecting (going to selected), instant when deselecting
+  const staggerDelay = isSelected ? `${Math.min(animIndex * 50, 200)}ms` : '0ms';
 
   // When a different clip starts playing, stop this one
   useEffect(() => {
@@ -33,7 +37,6 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
   function handleSelect(e: React.MouseEvent) {
     e.stopPropagation();
     storage.toggleSelection(clip.id);
-    setSelected((prev) => !prev);
     onSelectionChange();
   }
 
@@ -41,7 +44,6 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
     e.stopPropagation();
 
     if (!showMedia) {
-      // Start playing
       setShowMedia(true);
       setPlayingId(clip.id);
       setIsPlaying(true);
@@ -54,7 +56,6 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
     }
 
     if (isGif) {
-      // GIFs have no real pause — toggle by hiding/showing the animated img
       setShowMedia(false);
       setIsPlaying(false);
     } else {
@@ -73,9 +74,11 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
     <div
       className="relative rounded-lg overflow-hidden bg-gray-800 aspect-video group"
       style={{
-        border: selected ? '3px solid #22c55e' : '3px solid transparent',
+        border: isSelected ? '3px solid #22c55e' : '3px solid transparent',
         minHeight: '44px',
         minWidth: '44px',
+        transition: 'border-color 180ms ease',
+        transitionDelay: staggerDelay,
       }}
     >
       {/* Thumbnail (shown when not playing) */}
@@ -120,7 +123,7 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
         />
       )}
 
-      {/* Play / Pause button — center overlay (both GIFs and videos) */}
+      {/* Play / Pause button — center overlay */}
       <button
         onClick={handlePlayPause}
         className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors focus:outline-none"
@@ -145,14 +148,18 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
       {/* Select button — bottom bar */}
       <button
         onClick={handleSelect}
-        className={`absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1 py-1 text-xs font-semibold transition-colors ${
-          selected
+        className={`absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1 py-1 text-xs font-semibold ${
+          isSelected
             ? 'bg-[#22c55e] text-white'
             : 'bg-black/60 text-gray-300 hover:bg-black/80 hover:text-white'
         }`}
-        aria-label={selected ? 'Deselect clip' : 'Select clip'}
+        style={{
+          transition: 'background-color 180ms ease',
+          transitionDelay: staggerDelay,
+        }}
+        aria-label={isSelected ? 'Deselect clip' : 'Select clip'}
       >
-        {selected ? (
+        {isSelected ? (
           <>
             <Check size={11} strokeWidth={3} />
             Selected
@@ -166,11 +173,17 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
       </button>
 
       {/* Selected checkmark badge */}
-      {selected && (
-        <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-[#22c55e] rounded-full flex items-center justify-center shadow pointer-events-none">
-          <Check size={11} className="text-white" strokeWidth={3} />
-        </div>
-      )}
+      <div
+        className="absolute top-1.5 right-1.5 w-5 h-5 bg-[#22c55e] rounded-full flex items-center justify-center shadow pointer-events-none"
+        style={{
+          opacity: isSelected ? 1 : 0,
+          transform: isSelected ? 'scale(1)' : 'scale(0.5)',
+          transition: 'opacity 180ms ease, transform 180ms ease',
+          transitionDelay: staggerDelay,
+        }}
+      >
+        <Check size={11} className="text-white" strokeWidth={3} />
+      </div>
     </div>
   );
 }
