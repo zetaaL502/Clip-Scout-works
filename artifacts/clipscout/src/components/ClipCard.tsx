@@ -14,16 +14,21 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [showVideo, setShowVideo] = useState(false);
+  const [showMedia, setShowMedia] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { playingId, setPlayingId } = usePlaying();
+  const isGif = clip.source === 'giphy';
 
+  // When a different clip starts playing, stop this one
   useEffect(() => {
-    if (playingId !== clip.id && showVideo) {
-      videoRef.current?.pause();
+    if (playingId !== clip.id && showMedia) {
+      if (!isGif) {
+        videoRef.current?.pause();
+      }
+      setShowMedia(false);
       setIsPlaying(false);
     }
-  }, [playingId, clip.id, showVideo]);
+  }, [playingId, clip.id, showMedia, isGif]);
 
   function handleSelect(e: React.MouseEvent) {
     e.stopPropagation();
@@ -35,33 +40,34 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
   function handlePlayPause(e: React.MouseEvent) {
     e.stopPropagation();
 
-    if (!showVideo) {
-      setShowVideo(true);
+    if (!showMedia) {
+      // Start playing
+      setShowMedia(true);
       setPlayingId(clip.id);
       setIsPlaying(true);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.play().catch(() => {});
-        }
-      }, 50);
+      if (!isGif) {
+        setTimeout(() => {
+          videoRef.current?.play().catch(() => {});
+        }, 50);
+      }
       return;
     }
 
-    if (isPlaying) {
-      videoRef.current?.pause();
+    if (isGif) {
+      // GIFs have no real pause — toggle by hiding/showing the animated img
+      setShowMedia(false);
       setIsPlaying(false);
     } else {
-      setPlayingId(clip.id);
-      videoRef.current?.play().catch(() => {});
-      setIsPlaying(true);
+      if (isPlaying) {
+        videoRef.current?.pause();
+        setIsPlaying(false);
+      } else {
+        setPlayingId(clip.id);
+        videoRef.current?.play().catch(() => {});
+        setIsPlaying(true);
+      }
     }
   }
-
-  function handleVideoEnded() {
-    setIsPlaying(false);
-  }
-
-  const isGif = clip.source === 'giphy';
 
   return (
     <div
@@ -72,11 +78,11 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
         minWidth: '44px',
       }}
     >
-      {/* Thumbnail */}
-      {!imgLoaded && !imgError && !showVideo && (
+      {/* Thumbnail (shown when not playing) */}
+      {!imgLoaded && !imgError && !showMedia && (
         <div className="absolute inset-0 animate-pulse bg-gray-800 rounded-lg" />
       )}
-      {!imgError && !showVideo && (
+      {!imgError && !showMedia && (
         <img
           src={clip.thumbnail_url}
           alt=""
@@ -86,42 +92,48 @@ export function ClipCard({ clip, onSelectionChange }: Props) {
           onError={() => setImgError(true)}
         />
       )}
-      {imgError && !showVideo && (
+      {imgError && !showMedia && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-800 text-gray-500 text-xs">
           No preview
         </div>
       )}
 
-      {/* Video player */}
-      {showVideo && (
+      {/* Animated GIF (shown when playing for Giphy clips) */}
+      {showMedia && isGif && (
+        <img
+          src={clip.media_url}
+          alt=""
+          className="w-full h-full object-cover"
+        />
+      )}
+
+      {/* Video player (shown when playing for Pexels clips) */}
+      {showMedia && !isGif && (
         <video
           ref={videoRef}
           src={clip.media_url}
           className="w-full h-full object-cover"
           loop
           playsInline
-          onEnded={handleVideoEnded}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
         />
       )}
 
-      {/* Play / Pause button — center overlay */}
-      {!isGif && (
-        <button
-          onClick={handlePlayPause}
-          className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors focus:outline-none"
-          aria-label={isPlaying ? 'Pause' : 'Play'}
-        >
-          <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            {isPlaying ? (
-              <Pause size={18} className="text-white" fill="white" />
-            ) : (
-              <Play size={18} className="text-white" fill="white" />
-            )}
-          </div>
-        </button>
-      )}
+      {/* Play / Pause button — center overlay (both GIFs and videos) */}
+      <button
+        onClick={handlePlayPause}
+        className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors focus:outline-none"
+        aria-label={isPlaying ? 'Pause' : 'Play'}
+      >
+        <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          {isPlaying ? (
+            <Pause size={18} className="text-white" fill="white" />
+          ) : (
+            <Play size={18} className="text-white" fill="white" />
+          )}
+        </div>
+      </button>
 
       {/* GIF label */}
       {isGif && (

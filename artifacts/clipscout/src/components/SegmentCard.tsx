@@ -14,6 +14,22 @@ interface Props {
   onSelectionChange: () => void;
 }
 
+// Builds an ordered list of keyword combos to try for "Add 4 More → Pexels".
+// Example: "busy city street night rain" →
+//   ["busy", "busy city", "city", "city street", "street", "street night", "night", "night rain", "rain"]
+function buildPexelsRetryCombos(keywords: string): string[] {
+  const words = keywords.split(' ').filter((w) => w.length > 0);
+  if (words.length === 0) return [keywords];
+  const combos: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    combos.push(words[i]);
+    if (i + 1 < words.length) {
+      combos.push(`${words[i]} ${words[i + 1]}`);
+    }
+  }
+  return combos;
+}
+
 export function SegmentCard({ segment, index, total, initialClips, isPreloaded, onSelectionChange }: Props) {
   const [clips, setClips] = useState<Clip[]>(initialClips);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -28,11 +44,13 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const loadedRef = useRef(isPreloaded && initialClips.length > 0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  // Tracks which word index to use for the next "Add 4 More → Pexels" attempt
-  const pexelsWordIndexRef = useRef(0);
+  // Index into the retry combo list for "Add 4 More → Pexels"
+  const pexelsRetryIndexRef = useRef(0);
+  const pexelsRetryCombos = useRef(buildPexelsRetryCombos(segment.pexels_keywords));
 
-  // Initial clip load — max 40 second hard timeout.
-  // If 0 results, retry once with first 2 words of keywords.
+  // Initial clip load — hard 40 second timeout per segment.
+  // If 0 results on first try, retries once with first 2 words.
+  // Any path (success, 0 results, error, timeout) clears the skeleton.
   const loadInitialClips = useCallback(async () => {
     if (loadedRef.current) return;
     loadedRef.current = true;
@@ -51,7 +69,6 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
       let newClips = await fetchPexelsClips(segment, 1);
 
       if (newClips.length === 0) {
-        // Retry with simplified keywords (first 2 words)
         const simplified = segment.pexels_keywords.split(' ').slice(0, 2).join(' ');
         const retrySegment = { ...segment, pexels_keywords: simplified };
         newClips = await fetchPexelsClips(retrySegment, 1);
@@ -117,7 +134,6 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
       });
     }, 1000);
 
-    // 20s timeout for Pexels, 15s for Giphy
     const timeoutMs = source === 'pexels' ? 20000 : 15000;
     let timedOut = false;
     const timeoutId = setTimeout(() => {
@@ -129,11 +145,10 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
     try {
       let newClips: Clip[] = [];
       if (source === 'pexels') {
-        // Cycle through individual words from the keywords on each attempt
-        // so each "Add 4 More → Pexels" click uses a fresh unrelated single word
-        const words = segment.pexels_keywords.split(' ').filter((w) => w.length > 0);
-        const keyword = words[pexelsWordIndexRef.current % words.length];
-        pexelsWordIndexRef.current += 1;
+        // Cycle through keyword combos so each attempt uses a fresh word/phrase
+        const combos = pexelsRetryCombos.current;
+        const keyword = combos[pexelsRetryIndexRef.current % combos.length];
+        pexelsRetryIndexRef.current += 1;
         const nextPage = pexelsPage + 1;
         const broadSegment = { ...segment, pexels_keywords: keyword };
         newClips = await fetchPexelsClips(broadSegment, nextPage);
@@ -218,7 +233,7 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
           </div>
         ) : clips.length === 0 ? (
           <p className="text-gray-500 text-sm text-center py-4">
-            No clips found. Try Add 4 More.
+            Clips not found. Try Add 4 More.
           </p>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

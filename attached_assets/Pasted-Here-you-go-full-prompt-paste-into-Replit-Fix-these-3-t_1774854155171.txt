@@ -1,0 +1,41 @@
+Here you go, full prompt, paste into Replit:
+
+---
+
+> "Fix these 3 things. Do not touch anything else that is currently working.
+>
+> **Fix 1 — Clip loading timeout and keyword retry:**
+> Some segments get stuck loading forever when Pexels returns 0 results or cannot find footage for the keywords. Fix it exactly like this:
+> - Each segment has its own independent 40 second timer that starts when that segment begins fetching clips
+> - If Pexels returns clips successfully within 40 seconds → show the clips normally
+> - If Pexels returns 0 results → immediately stop loading and show inside that card: 'Clips not found. Try Add 4 More.'
+> - If Pexels fetch takes longer than 40 seconds → cancel the fetch and show: 'Clips not found. Try Add 4 More.'
+> - If Pexels throws any error → immediately stop loading and show: 'Clips not found. Try Add 4 More.'
+> - When the user clicks 'Add 4 More' and picks Pexels, do NOT use the original full keyword phrase that already failed. Instead break the original keywords into smaller individual combinations and try them one at a time. For example if the original keywords were 'busy city street night rain' then the retry attempts should go in this order: 'city', 'busy city', 'street', 'busy street', 'night rain', 'rain' — one different combination per each Add 4 More click. Never repeat the same search term twice. Each attempt gets its own 40 second timeout. If 0 results or timeout → show 'Clips not found. Try Add 4 More.' and stop. Next time user clicks Add 4 More try the next combination in the list.
+> - Each segment manages its own independent loading state, timer, and keyword retry list. No segment affects any other segment. The rest of the page must never reload or re-render when one segment is loading.
+>
+> **Fix 2 — Select All button:**
+> Add a 'Select All' button in the sticky top bar next to the Export ZIP button. It must work on ALL screen sizes including mobile and small screens. Here is exactly how it works:
+> - Button label: 'Select All'
+> - When clicked: select ALL clips that are currently loaded and visible across ALL segments at that moment — both Pexels clips and Giphy GIFs
+> - Each selected clip shows the green border and checkmark exactly like manually selecting does
+> - All selected clip IDs get saved to localStorage under clipscout_selections
+> - The Export ZIP count updates immediately to show the total selected clips
+> - If everything is already selected the button changes to 'Deselect All' — clicking it deselects everything and clears clipscout_selections
+> - This button does NOT auto-fetch or load new clips — it only selects whatever is already loaded and visible
+> - The button must be fully visible and tappable on mobile screens — minimum 44x44px touch target
+>
+> **Fix 3 — Giphy GIF preview button:**
+> Right now Giphy GIFs only show a still thumbnail with no way to preview them. Add a play/pause preview button to every Giphy GIF clip, exactly like the Pexels video preview works. Here is the exact behavior:
+> - Each GIF thumbnail shows a play button icon overlaid in the center
+> - When the user taps the play icon, the still thumbnail is replaced by the animated GIF playing using an img tag with the gif URL as the src
+> - A pause button appears while the GIF is playing
+> - When the user taps pause, it switches back to the still thumbnail
+> - Selecting a clip (green border + checkmark) is completely separate from previewing — tapping play does NOT select the clip, and selecting the clip does NOT start playing it
+> - Only one GIF or video should play at a time across the entire page — if a GIF is playing in segment 3 and the user plays something in segment 7, segment 3 automatically stops
+>
+> Do not touch the Pexels video preview, export ZIP, home page, Groq script analysis, settings screen, or any other feature that is currently working."
+
+---
+
+🔥

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, Download, Settings } from 'lucide-react';
+import { ArrowLeft, Download, Settings, CheckSquare, Square } from 'lucide-react';
 import { SegmentCard } from '../components/SegmentCard';
 import { storage } from '../storage';
 import { fetchPexelsClips } from '../api';
@@ -65,6 +65,20 @@ export function GridPage({ onBack, onSettings }: Props) {
   const refreshSelections = useCallback(() => {
     setSelections(storage.getSelections());
   }, []);
+
+  // Compute all currently loaded clip IDs from storage on each render
+  const allLoadedClipIds = Object.values(storage.getClips()).flat().map((c) => c.id);
+  const allSelected =
+    allLoadedClipIds.length > 0 && allLoadedClipIds.every((id) => selections.includes(id));
+
+  function handleSelectAll() {
+    if (allSelected) {
+      storage.setSelections([]);
+    } else {
+      storage.setSelections(allLoadedClipIds);
+    }
+    refreshSelections();
+  }
 
   const selectedCount = selections.length;
   const segmentsWithSelection = segments.filter((seg) => {
@@ -153,15 +167,35 @@ export function GridPage({ onBack, onSettings }: Props) {
               className="flex items-center gap-1.5 bg-[#22c55e] disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-2 px-3 rounded-xl text-sm transition-colors active:scale-95"
             >
               <Download size={16} />
-              Export ZIP ({selectedCount})
+              <span className="hidden sm:inline">Export ZIP</span>
+              <span>({selectedCount})</span>
             </button>
           </div>
         </div>
 
         <div className="px-4 sm:px-6 pb-3">
-          <p className="text-xs text-gray-400 mb-1.5">
-            {segmentsWithSelection} of {segments.length} segments have clips selected
-          </p>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-xs text-gray-400">
+              {segmentsWithSelection} of {segments.length} segments have clips selected
+            </p>
+            <button
+              onClick={handleSelectAll}
+              className="flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white transition-colors min-h-[44px] px-2 active:scale-95"
+              aria-label={allSelected ? 'Deselect all clips' : 'Select all clips'}
+            >
+              {allSelected ? (
+                <>
+                  <CheckSquare size={13} className="text-[#22c55e]" />
+                  <span className="text-[#22c55e]">Deselect All</span>
+                </>
+              ) : (
+                <>
+                  <Square size={13} />
+                  Select All
+                </>
+              )}
+            </button>
+          </div>
           <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-[#22c55e] rounded-full transition-all duration-300"
