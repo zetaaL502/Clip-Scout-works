@@ -2,6 +2,27 @@ import { Router, type IRouter } from "express";
 
 const router: IRouter = Router();
 
+type PexelsVideoFile = {
+  quality: string;
+  link: string;
+  file_type: string;
+  width?: number;
+};
+
+function pickExportSafeFile(videoFiles: PexelsVideoFile[]): PexelsVideoFile | undefined {
+  const mp4Files = videoFiles.filter((f) => f.file_type === "video/mp4");
+  const widthSafe = (f: PexelsVideoFile) => !f.width || f.width <= 2000;
+  const inTargetRange = (f: PexelsVideoFile) =>
+    typeof f.width === "number" && f.width >= 1280 && f.width <= 1920;
+
+  return (
+    mp4Files.find((f) => f.quality === "hd" && widthSafe(f)) ??
+    mp4Files.find((f) => inTargetRange(f) && widthSafe(f)) ??
+    mp4Files.find((f) => widthSafe(f)) ??
+    mp4Files[0]
+  );
+}
+
 router.post("/pexels-proxy", async (req, res) => {
   const apiKey = process.env["PEXELS_API_KEY"];
   if (!apiKey) {
@@ -51,6 +72,55 @@ router.post("/pexels-proxy", async (req, res) => {
     res.json(clips);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch from Pexels");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/pexels-video/:videoId", async (req, res) => {
+  const apiKey = process.env["PEXELS_API_KEY"];
+  if (!apiKey) {
+    res.status(500).json({ error: "PEXELS_API_KEY not configured" });
+    return;
+  }
+
+  const videoId = req.params.videoId;
+  if (!videoId) {
+    res.status(400).json({ error: "videoId is required" });
+    return;
+  }
+
+  try {
+    const url = `https://api.pexels.com/videos/videos/${encodeURIComponent(videoId)}`;
+    const pexelsRes = await fetch(url, {
+      headers: { Authorization: apiKey },
+    });
+
+    if (!pexelsRes.ok) {
+      const text = await pexelsRes.text();
+      req.log.error({ status: pexelsRes.status, body: text, videoId }, "Pexels video API error");
+      res.status(502).json({ error: `Pexels video error: ${pexelsRes.status}` });
+      return;
+    }
+
+    const data = (await pexelsRes.json()) as {
+      id: number;
+      video_files: PexelsVideoFile[];
+    };
+
+    const selected = pickExportSafeFile(data.video_files ?? []);
+    if (!selected?.link) {
+      res.status(404).json({ error: "No exportable video file found" });
+      return;
+    }
+
+    res.json({
+      id: data.id,
+      media_url: selected.link,
+      width: selected.width ?? null,
+      quality: selected.quality,
+    });
+  } catch (err) {
+    req.log.error({ err, videoId }, "Failed to fetch Pexels video details");
     res.status(500).json({ error: "Internal server error" });
   }
 });

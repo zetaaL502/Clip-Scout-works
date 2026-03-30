@@ -2,6 +2,7 @@ import type { Clip, Segment } from './types';
 import { storage } from './storage';
 
 const PEXELS_PROXY = '/api/pexels-proxy';
+const PEXELS_VIDEO_PROXY = '/api/pexels-video';
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 function delay(ms: number): Promise<void> {
@@ -106,6 +107,18 @@ export async function fetchGiphyClips(segment: Segment, page: number): Promise<C
       media_url: images?.original?.url ?? images?.original_mp4?.mp4 ?? '',
     };
   });
+}
+
+export async function fetchBestPexelsExportUrl(videoId: string): Promise<string> {
+  const res = await fetch(`${PEXELS_VIDEO_PROXY}/${encodeURIComponent(videoId)}`);
+  if (!res.ok) {
+    throw new Error(`Pexels video details error: ${res.status}`);
+  }
+  const data = (await res.json()) as { media_url?: string };
+  if (!data.media_url) {
+    throw new Error('Pexels video details response missing media_url');
+  }
+  return data.media_url;
 }
 
 type RawSegment = Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>;

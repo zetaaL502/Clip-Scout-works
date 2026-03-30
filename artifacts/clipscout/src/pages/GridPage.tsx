@@ -2,14 +2,108 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ArrowLeft, Download, Settings, CheckSquare, Square } from 'lucide-react';
 import { SegmentCard } from '../components/SegmentCard';
 import { storage } from '../storage';
-import { fetchPexelsClips } from '../api';
+import { fetchBestPexelsExportUrl, fetchPexelsClips } from '../api';
 import { useToastCtx } from '../context/ToastContext';
-import { downloadZip } from 'client-zip';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import type { Clip, Segment } from '../types';
 
 interface Props {
   onBack: () => void;
   onSettings: () => void;
+}
+
+const EXPORT_BATCH_SIZE = 100;
+const EXPORT_BATCH_DELAY_MS = 2000;
+const EXPORT_FILE_TIME_STEP_MS = 60_000;
+
+type ExportProgressUpdater = (current: number, total: number) => void;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPexelsClipId(clipId: string): boolean {
+  return clipId.startsWith('pexels-');
+}
+
+function parsePexelsVideoId(clipId: string): string | null {
+  const match = /^pexels-(.+)-\d+$/.exec(clipId);
+  return match?.[1] ?? null;
+}
+
+async function resolveExportMediaUrl(clip: Clip): Promise<string> {
+  if (clip.source !== 'pexels' || !isPexelsClipId(clip.id)) {
+    return clip.media_url;
+  }
+  const videoId = parsePexelsVideoId(clip.id);
+  if (!videoId) return clip.media_url;
+  try {
+    return await fetchBestPexelsExportUrl(videoId);
+  } catch {
+    return clip.media_url;
+  }
+}
+
+async function exportVideosInBatches(
+  videoDataArray: Clip[],
+  onProgress: ExportProgressUpdater,
+  addToast: (type: 'success' | 'error' | 'info', message: string) => void,
+  scriptContent?: string,
+): Promise<void> {
+  const total = videoDataArray.length;
+  const baseTimestamp = Date.now();
+  let processed = 0;
+  const totalBatches = Math.ceil(total / EXPORT_BATCH_SIZE);
+
+  for (let batchStart = 0; batchStart < total; batchStart += EXPORT_BATCH_SIZE) {
+    const batchIndex = Math.floor(batchStart / EXPORT_BATCH_SIZE);
+    const batchItems = videoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
+    let zip: JSZip | null = new JSZip();
+
+    for (let i = 0; i < batchItems.length; i++) {
+      const clip = batchItems[i];
+      const globalIndex = batchStart + i;
+      const fileNumber = String(globalIndex + 1).padStart(3, '0');
+      const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
+      const filename = `${fileNumber}.${ext}`;
+
+      try {
+        const mediaUrl = await resolveExportMediaUrl(clip);
+        const res = await fetch(mediaUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+
+        zip.file(filename, blob, {
+          date: new Date(baseTimestamp + globalIndex * EXPORT_FILE_TIME_STEP_MS),
+        });
+      } catch {
+        addToast('error', `Video ${globalIndex + 1} failed, skipped.`);
+      }
+
+      processed += 1;
+      onProgress(processed, total);
+      console.log(`Downloading Video ${processed} of ${total}`);
+    }
+
+    if (batchIndex === 0 && scriptContent && scriptContent.trim().length > 0) {
+      zip.file('script.txt', scriptContent, {
+        date: new Date(baseTimestamp + total * EXPORT_FILE_TIME_STEP_MS),
+      });
+    }
+
+    try {
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const partName = `YouTube_Export_Part${batchIndex + 1}.zip`;
+      saveAs(zipBlob, partName);
+    } finally {
+      zip = null;
+    }
+
+    if (batchIndex < totalBatches - 1) {
+      await sleep(EXPORT_BATCH_DELAY_MS);
+    }
+  }
 }
 
 export function GridPage({ onBack, onSettings }: Props) {
@@ -276,44 +370,21 @@ export function GridPage({ onBack, onSettings }: Props) {
     setExporting(true);
     setExportProgress({ current: 0, total: allFlat.length });
 
-    const files: { name: string; input: Blob }[] = [];
-
-    for (let i = 0; i < allFlat.length; i++) {
-      const clip = allFlat[i];
-      const num = String(i + 1).padStart(2, '0');
-      const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
-      const filename = `${num}_scene.${ext}`;
-
-      try {
-        const res = await fetch(clip.media_url);
-        if (!res.ok) throw new Error('fetch failed');
-        const blob = await res.blob();
-        files.push({ name: filename, input: blob });
-      } catch {
-        addToast('error', `Clip ${i + 1} failed to download, skipping.`);
-      }
-
-      setExportProgress({ current: i + 1, total: allFlat.length });
-    }
-
     const scriptContent = project?.fullScript ?? '';
-    const scriptBlob = new Blob([scriptContent], { type: 'text/plain' });
-    files.push({ name: 'script.txt', input: scriptBlob });
 
     try {
-      const blob = await downloadZip(files).blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'clipscout_export.zip';
-      a.click();
-      URL.revokeObjectURL(url);
+      await exportVideosInBatches(
+        allFlat,
+        (current, total) => setExportProgress({ current, total }),
+        addToast,
+        scriptContent,
+      );
       addToast('success', 'Export ready! Downloading now…');
     } catch {
       addToast('error', 'Export failed. Please try again.');
+    } finally {
+      setExporting(false);
     }
-
-    setExporting(false);
   }
 
   return (
