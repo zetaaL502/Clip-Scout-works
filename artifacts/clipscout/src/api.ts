@@ -3,11 +3,12 @@ import { storage } from './storage';
 
 const PEXELS_PROXY = '/api/pexels-proxy';
 
-export async function fetchPexelsClips(segment: Segment, page: number): Promise<Clip[]> {
+export async function fetchPexelsClips(segment: Segment, page: number, signal?: AbortSignal): Promise<Clip[]> {
   const res = await fetch(PEXELS_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keywords: segment.pexels_keywords, page }),
+    signal,
   });
 
   if (!res.ok) {
@@ -44,9 +45,15 @@ export async function fetchGiphyClips(segment: Segment, page: number): Promise<C
   });
 }
 
-const GROQ_PROMPT = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage for a long-form video.
+const GROQ_PROMPT = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
-Read the full script carefully. Split it into logical segments of approximately 50–75 words each. Aim for 20–35 segments total. Never cut mid-sentence. Never make a segment shorter than 30 words or longer than 100 words.
+CRITICAL RULE: You MUST cover the ENTIRE script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part of the script. Every single sentence must appear in exactly one segment. If the script is long, create as many segments as needed — 40, 50, 60, or more is fine.
+
+Instructions:
+- Split the full script into logical segments of approximately 50–75 words each.
+- Never cut mid-sentence. Never make a segment shorter than 30 words or longer than 100 words.
+- The text_body of every segment must be the exact script text for that segment, copied verbatim.
+- The segments, taken together, must reproduce the entire script with no words missing.
 
 For each segment generate:
 - "pexels_keywords": 3–5 specific visual words describing cinematic, landscape, nature, or action footage. Example: "busy city street night rain"
@@ -72,7 +79,8 @@ ${script}`;
 export async function analyzeScript(script: string): Promise<Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>[]> {
   const apiKey = storage.getGroqKey();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  // 90 second timeout — long scripts with many segments need time to generate
+  const timeout = setTimeout(() => controller.abort(), 90000);
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -84,6 +92,7 @@ export async function analyzeScript(script: string): Promise<Omit<Segment, 'id' 
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         response_format: { type: 'json_object' },
+        max_tokens: 8192,
         messages: [{ role: 'user', content: GROQ_PROMPT(script) }],
       }),
       signal: controller.signal,

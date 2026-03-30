@@ -49,44 +49,43 @@ export function SegmentCard({ segment, index, total, initialClips, isPreloaded, 
   const pexelsRetryCombos = useRef(buildPexelsRetryCombos(segment.pexels_keywords));
 
   // Initial clip load — hard 40 second timeout per segment.
-  // If 0 results on first try, retries once with first 2 words.
-  // Any path (success, 0 results, error, timeout) clears the skeleton.
+  // Uses AbortController so the actual network request is cancelled on timeout,
+  // not just ignored. Any path (success, 0 results, abort, error) clears the skeleton.
   const loadInitialClips = useCallback(async () => {
     if (loadedRef.current) return;
     loadedRef.current = true;
     setLoadingInitial(true);
 
-    let resolved = false;
+    const controller = new AbortController();
 
     const hardTimeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        setLoadingInitial(false);
-      }
+      controller.abort();
+      setLoadingInitial(false);
     }, 40000);
 
     try {
-      let newClips = await fetchPexelsClips(segment, 1);
+      let newClips = await fetchPexelsClips(segment, 1, controller.signal);
 
-      if (newClips.length === 0) {
+      if (!controller.signal.aborted && newClips.length === 0) {
+        // Retry once with the first 2 words of the keywords
         const simplified = segment.pexels_keywords.split(' ').slice(0, 2).join(' ');
         const retrySegment = { ...segment, pexels_keywords: simplified };
-        newClips = await fetchPexelsClips(retrySegment, 1);
+        newClips = await fetchPexelsClips(retrySegment, 1, controller.signal);
       }
 
       clearTimeout(hardTimeout);
-      if (!resolved) {
-        resolved = true;
+
+      if (!controller.signal.aborted) {
         if (newClips.length > 0) {
           storage.addClips(segment.id, newClips);
           setClips(newClips);
         }
         setLoadingInitial(false);
       }
-    } catch {
+    } catch (e) {
       clearTimeout(hardTimeout);
-      if (!resolved) {
-        resolved = true;
+      // AbortError means timeout already fired and set loadingInitial(false)
+      if ((e as Error).name !== 'AbortError') {
         setLoadingInitial(false);
       }
     }
