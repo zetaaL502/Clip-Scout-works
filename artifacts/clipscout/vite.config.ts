@@ -15,55 +15,51 @@ function parsePort(rawPort: string | undefined, fallback: number) {
   return port;
 }
 
-export default defineConfig(({ command }) => {
+export default defineConfig(() => {
   const port = parsePort(process.env.PORT, 3001);
   const basePath = process.env.BASE_PATH ?? "/";
 
   return {
     base: basePath,
-  plugins: [
-    react(),
-    tailwindcss(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          cartographer({
-            root: path.resolve(import.meta.dirname, ".."),
-          }),
-          devBanner(),
-        ]
-      : []),
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+    plugins: [
+      react(),
+      tailwindcss(),
+      runtimeErrorOverlay(),
+      ...(process.env.NODE_ENV !== "production" &&
+      process.env.REPL_ID !== undefined
+        ? [
+            cartographer({
+              root: path.resolve(import.meta.dirname, ".."),
+            }),
+            devBanner(),
+          ]
+        : []),
+    ],
+    resolve: {
+      alias: {
+        "@": path.resolve(import.meta.dirname, "src"),
+        "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      },
+      dedupe: ["react", "react-dom"],
     },
-    dedupe: ["react", "react-dom"],
-  },
-  root: path.resolve(import.meta.dirname),
-  build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
-  },
-    ...(command === "serve"
-      ? {
-          server: {
-            port,
-            host: "0.0.0.0",
-            allowedHosts: true,
-            fs: {
-              strict: true,
-              deny: ["**/.*"],
-            },
-          },
-          preview: {
-            port,
-            host: "0.0.0.0",
-            allowedHosts: true,
-          },
-        }
-      : {}),
+    root: path.resolve(import.meta.dirname),
+    build: {
+      outDir: path.resolve(import.meta.dirname, "dist/public"),
+      emptyOutDir: true,
+    },
+    server: {
+      port,
+      host: "0.0.0.0",
+      allowedHosts: true,
+      fs: {
+        strict: true,
+        deny: ["**/.*"],
+      },
+    },
+    preview: {
+      port,
+      host: "0.0.0.0",
+      allowedHosts: true,
+    },
   };
 });
