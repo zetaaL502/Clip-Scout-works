@@ -281,9 +281,11 @@ export function SegmentCard({
               <ClipCard
                 key={`segment_${index}_clip_${clipIndex}`}
                 clip={clip}
-                isSelected={selectedSet.has(clip.id)}
+                isSelected={selectedSet.has(`segment_${index}_clip_${clipIndex}`)}
                 animIndex={clipIndex}
                 bulkSelectNonce={bulkSelectNonce}
+                segmentIndex={index}
+                clipIndex={clipIndex}
                 onSelectionChange={onSelectionChange}
               />
             ))}

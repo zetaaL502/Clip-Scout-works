@@ -9,10 +9,12 @@ interface Props {
   isSelected: boolean;
   animIndex: number;
   bulkSelectNonce: number;
+  segmentIndex: number;
+  clipIndex: number;
   onSelectionChange: (nextSelections?: string[]) => void;
 }
 
-function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, onSelectionChange }: Props) {
+function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentIndex, clipIndex, onSelectionChange }: Props) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -45,7 +47,7 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, onSelectio
 
   function handleSelect(e: React.MouseEvent) {
     e.stopPropagation();
-    const nextSelections = storage.toggleSelection(clip.id);
+    const nextSelections = storage.toggleSelection(segmentIndex, clipIndex);
     onSelectionChange(nextSelections);
   }
 

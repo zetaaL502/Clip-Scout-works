@@ -78,7 +78,8 @@ export const storage = {
 
   getSelections: () => get<string[]>(KEYS.SELECTIONS) ?? [],
   setSelections: (ids: string[]) => set(KEYS.SELECTIONS, ids),
-  toggleSelection: (id: string): string[] => {
+  toggleSelection: (segmentIndex: number, clipIndex: number): string[] => {
+    const id = `segment_${segmentIndex}_clip_${clipIndex}`;
     const current = get<string[]>(KEYS.SELECTIONS) ?? [];
     const updated = current.includes(id)
       ? current.filter((x) => x !== id)
@@ -86,7 +87,8 @@ export const storage = {
     set(KEYS.SELECTIONS, updated);
     return updated;
   },
-  isSelected: (id: string): boolean => {
+  isSelected: (segmentIndex: number, clipIndex: number): boolean => {
+    const id = `segment_${segmentIndex}_clip_${clipIndex}`;
     const current = get<string[]>(KEYS.SELECTIONS) ?? [];
     return current.includes(id);
   },

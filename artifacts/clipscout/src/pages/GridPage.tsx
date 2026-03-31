@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, Download, Settings, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Download, Settings, SquareCheck as CheckSquare, Square } from 'lucide-react';
 import { SegmentCard } from '../components/SegmentCard';
 import { storage } from '../storage';
 import { fetchBestPexelsExportUrl, fetchPexelsClips } from '../api';
@@ -300,12 +300,7 @@ export function GridPage({ onBack, onSettings }: Props) {
   }, []);
 
   const allClips = useMemo(() => storage.getClips(), [segments, preloadedClips, selections]);
-  const allLoadedClipIds = useMemo(
-    () => Object.values(allClips).flat().map((c) => c.id),
-    [allClips]
-  );
   const selectedSet = useMemo(() => new Set(selections), [selections]);
-  const allSelected = allLoadedClipIds.length > 0 && allLoadedClipIds.every((id) => selectedSet.has(id));
   const selectedCount = selections.length;
 
   // Label rule from the spec:
@@ -322,15 +317,27 @@ export function GridPage({ onBack, onSettings }: Props) {
     // If everything becomes selected (whether via the Select All button or
     // by manually selecting every clip), keep the "Deselect All" label
     // available until the user clears selections.
-    if (allSelected) setBulkSelectArmed(true);
-  }, [allSelected]);
+    const allClipsCount = segments.reduce((sum, seg) => {
+      return sum + (allClips[seg.id] ?? []).length;
+    }, 0);
+    if (allClipsCount > 0 && selectedCount === allClipsCount) {
+      setBulkSelectArmed(true);
+    }
+  }, [selectedCount, segments, allClips]);
 
   function handleSelectAll() {
     // Bounce/press animation on the button itself.
     setSelectAllBumping(false);
     requestAnimationFrame(() => setSelectAllBumping(true));
 
-    const allLoadedNow = allLoadedClipIds;
+    const allLoadedNow: string[] = [];
+    segments.forEach((seg, segIdx) => {
+      const segClips = allClips[seg.id] ?? [];
+      segClips.forEach((_, clipIdx) => {
+        allLoadedNow.push(`segment_${segIdx}_clip_${clipIdx}`);
+      });
+    });
+
     if (showDeselectAll) {
       storage.setSelections([]);
       setBulkSelectArmed(false);
@@ -344,9 +351,9 @@ export function GridPage({ onBack, onSettings }: Props) {
 
   function handleSelectTwo(side: 'left' | 'right') {
     const currentSelections = new Set(selections);
-    const targetIds = new Set<string>();
+    const targetKeys = new Set<string>();
 
-    segments.forEach((seg) => {
+    segments.forEach((seg, segIdx) => {
       const segClips = allClips[seg.id] ?? [];
       // "Original clips only": initial Pexels page=1 clips (never Add 4 More).
       const originalClips = segClips
@@ -369,8 +376,10 @@ export function GridPage({ onBack, onSettings }: Props) {
       }
 
       indices.forEach((i) => {
-        const clip = originalClips[i];
-        if (clip) targetIds.add(clip.id);
+        const clipIdx = segClips.findIndex((c) => c === originalClips[i]);
+        if (clipIdx >= 0) {
+          targetKeys.add(`segment_${segIdx}_clip_${clipIdx}`);
+        }
       });
     });
 
@@ -378,13 +387,13 @@ export function GridPage({ onBack, onSettings }: Props) {
     // - if all target clips are already selected, deselect only those target clips
     // - otherwise, select missing target clips
     const allTargetsSelected =
-      targetIds.size > 0 && Array.from(targetIds).every((id) => currentSelections.has(id));
+      targetKeys.size > 0 && Array.from(targetKeys).every((id) => currentSelections.has(id));
 
     const nextSelections = new Set(currentSelections);
     if (allTargetsSelected) {
-      targetIds.forEach((id) => nextSelections.delete(id));
+      targetKeys.forEach((id) => nextSelections.delete(id));
     } else {
-      targetIds.forEach((id) => nextSelections.add(id));
+      targetKeys.forEach((id) => nextSelections.add(id));
     }
 
     const updated = Array.from(nextSelections);
@@ -393,9 +402,9 @@ export function GridPage({ onBack, onSettings }: Props) {
   }
   const segmentsWithSelection = useMemo(
     () =>
-      segments.filter((seg) => {
+      segments.filter((seg, segIdx) => {
         const segClips = allClips[seg.id] ?? [];
-        return segClips.some((c) => selectedSet.has(c.id));
+        return segClips.some((_, clipIdx) => selectedSet.has(`segment_${segIdx}_clip_${clipIdx}`));
       }).length,
     [segments, allClips, selectedSet]
   );
@@ -406,28 +415,24 @@ export function GridPage({ onBack, onSettings }: Props) {
     exportInFlightRef.current = true;
     g[exportLockKey] = true;
 
-    const clipById = new Map<string, Clip>();
-    Object.values(allClips).forEach((segClips) => {
-      segClips.forEach((clip) => {
-        if (!clipById.has(clip.id)) {
-          clipById.set(clip.id, clip);
-        }
+    // Build map: segment_N_clip_M -> Clip
+    const clipByKey = new Map<string, Clip>();
+    segments.forEach((seg, segIdx) => {
+      const segClips = allClips[seg.id] ?? [];
+      segClips.forEach((clip, clipIdx) => {
+        const key = `segment_${segIdx}_clip_${clipIdx}`;
+        clipByKey.set(key, clip);
       });
     });
 
-    // Build export list directly from selected ids to prevent segment-level duplicates.
-    // Preserves order but removes any accidental duplicate ids.
-    const selectionIdsUnique: string[] = [];
-    const seenSelectionIds = new Set<string>();
-    for (const id of selections) {
-      if (seenSelectionIds.has(id)) continue;
-      seenSelectionIds.add(id);
-      selectionIdsUnique.push(id);
+    // Get selected clips in order, preserving each individually even if same URL
+    const selectedClips: Clip[] = [];
+    for (const key of selections) {
+      const clip = clipByKey.get(key);
+      if (clip) {
+        selectedClips.push(clip);
+      }
     }
-
-    const selectedClips = selectionIdsUnique
-      .map((id) => clipById.get(id))
-      .filter((clip): clip is Clip => Boolean(clip));
 
     // Deduplicate by underlying media identity:
     // - Pexels: stable video id (ignores page suffix)
