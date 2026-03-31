@@ -279,7 +279,7 @@ export function SegmentCard({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {clips.map((clip, clipIndex) => (
               <ClipCard
-                key={clip.id}
+                key={`segment_${index}_clip_${clipIndex}`}
                 clip={clip}
                 isSelected={selectedSet.has(clip.id)}
                 animIndex={clipIndex}
