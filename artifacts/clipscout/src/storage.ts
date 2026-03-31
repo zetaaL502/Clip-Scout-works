@@ -76,20 +76,36 @@ export const storage = {
     return all[segmentId] ?? [];
   },
 
-  getSelections: () => get<string[]>(KEYS.SELECTIONS) ?? [],
-  setSelections: (ids: string[]) => set(KEYS.SELECTIONS, ids),
+  selectionKey: (segmentIndex: number, clipIndex: number): string =>
+    `segment_${segmentIndex}_clip_${clipIndex}`,
+  isPositionalKey: (key: string): boolean =>
+    /^segment_\d+_clip_\d+$/.test(key),
+  getSelections: (): string[] => {
+    const raw = get<string[]>(KEYS.SELECTIONS) ?? [];
+    const filtered = raw.filter((key) => /^segment_\d+_clip_\d+$/.test(key));
+    if (filtered.length !== raw.length) {
+      set(KEYS.SELECTIONS, filtered);
+    }
+    return filtered;
+  },
+  setSelections: (ids: string[]) => {
+    const positional = ids.filter((key) => /^segment_\d+_clip_\d+$/.test(key));
+    set(KEYS.SELECTIONS, positional);
+  },
   toggleSelection: (segmentIndex: number, clipIndex: number): string[] => {
     const id = `segment_${segmentIndex}_clip_${clipIndex}`;
     const current = get<string[]>(KEYS.SELECTIONS) ?? [];
-    const updated = current.includes(id)
-      ? current.filter((x) => x !== id)
-      : [...current, id];
+    const filtered = current.filter((key) => /^segment_\d+_clip_\d+$/.test(key));
+    const updated = filtered.includes(id)
+      ? filtered.filter((x) => x !== id)
+      : [...filtered, id];
     set(KEYS.SELECTIONS, updated);
     return updated;
   },
   isSelected: (segmentIndex: number, clipIndex: number): boolean => {
     const id = `segment_${segmentIndex}_clip_${clipIndex}`;
     const current = get<string[]>(KEYS.SELECTIONS) ?? [];
-    return current.includes(id);
+    const filtered = current.filter((key) => /^segment_\d+_clip_\d+$/.test(key));
+    return filtered.includes(id);
   },
 };
