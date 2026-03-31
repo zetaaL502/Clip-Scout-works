@@ -23,6 +23,20 @@ function set(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function keepHorizontalClip(clip: Clip): boolean {
+  if (clip.source !== 'pexels') return true;
+  if (typeof clip.width !== 'number' || typeof clip.height !== 'number') return false;
+  return clip.width > clip.height;
+}
+
+function sanitizeClipMap(input: Record<string, Clip[]>): Record<string, Clip[]> {
+  const next: Record<string, Clip[]> = {};
+  Object.entries(input).forEach(([segmentId, clips]) => {
+    next[segmentId] = (clips ?? []).filter(keepHorizontalClip);
+  });
+  return next;
+}
+
 export const storage = {
   getGroqKey: () => localStorage.getItem(KEYS.GROQ_KEY) ?? '',
   setGroqKey: (k: string) => localStorage.setItem(KEYS.GROQ_KEY, k),
@@ -43,16 +57,22 @@ export const storage = {
   getSegments: () => get<Segment[]>(KEYS.SEGMENTS) ?? [],
   setSegments: (s: Segment[]) => set(KEYS.SEGMENTS, s),
 
-  getClips: () => get<Record<string, Clip[]>>(KEYS.CLIPS) ?? {},
-  setClips: (c: Record<string, Clip[]>) => set(KEYS.CLIPS, c),
+  getClips: () => {
+    const raw = get<Record<string, Clip[]>>(KEYS.CLIPS) ?? {};
+    const sanitized = sanitizeClipMap(raw);
+    set(KEYS.CLIPS, sanitized);
+    return sanitized;
+  },
+  setClips: (c: Record<string, Clip[]>) => set(KEYS.CLIPS, sanitizeClipMap(c)),
   addClips: (segmentId: string, newClips: Clip[]) => {
-    const all = get<Record<string, Clip[]>>(KEYS.CLIPS) ?? {};
-    all[segmentId] = [...(all[segmentId] ?? []), ...newClips];
+    const all = storage.getClips();
+    const sanitizedNew = newClips.filter(keepHorizontalClip);
+    all[segmentId] = [...(all[segmentId] ?? []), ...sanitizedNew];
     set(KEYS.CLIPS, all);
     return all;
   },
   getSegmentClips: (segmentId: string) => {
-    const all = get<Record<string, Clip[]>>(KEYS.CLIPS) ?? {};
+    const all = storage.getClips();
     return all[segmentId] ?? [];
   },
 

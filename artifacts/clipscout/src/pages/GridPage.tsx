@@ -23,6 +23,32 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function downloadZipBlob(zipBlob: Blob, filename: string): void {
+  const nav = navigator as unknown as { msSaveOrOpenBlob?: (blob: Blob, name: string) => void };
+  if (typeof nav.msSaveOrOpenBlob === 'function') {
+    nav.msSaveOrOpenBlob(zipBlob, filename);
+    return;
+  }
+
+  try {
+    const zipFile = new File([zipBlob], filename, { type: 'application/zip' });
+    saveAs(zipFile, filename);
+    return;
+  } catch {
+    // Fall through to <a download> approach.
+  }
+
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function isPexelsClipId(clipId: string): boolean {
   return clipId.startsWith('pexels-');
 }
@@ -32,16 +58,24 @@ function parsePexelsVideoId(clipId: string): string | null {
   return match?.[1] ?? null;
 }
 
-async function resolveExportMediaUrl(clip: Clip): Promise<string> {
+function isLandscapeClip(clip: Clip): boolean {
+  if (typeof clip.width === 'number' && typeof clip.height === 'number') {
+    return clip.width > clip.height;
+  }
+  // Keep non-Pexels clips and unknown-size clips untouched.
+  return clip.source !== 'pexels';
+}
+
+async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
   if (clip.source !== 'pexels' || !isPexelsClipId(clip.id)) {
     return clip.media_url;
   }
   const videoId = parsePexelsVideoId(clip.id);
-  if (!videoId) return clip.media_url;
+  if (!videoId) return null;
   try {
     return await fetchBestPexelsExportUrl(videoId);
   } catch {
-    return clip.media_url;
+    return null;
   }
 }
 
@@ -51,15 +85,28 @@ async function exportVideosInBatches(
   addToast: (type: 'success' | 'error' | 'info', message: string) => void,
   scriptContent?: string,
 ): Promise<void> {
-  const total = videoDataArray.length;
+  // Extra safety: dedupe again at export-time in case cached selections/clips contain repeats.
+  // Preserves first-seen order.
+  const seenExportKeys = new Set<string>();
+  const dedupedVideoDataArray: Clip[] = [];
+  for (const clip of videoDataArray) {
+    const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
+    const key = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
+    if (seenExportKeys.has(key)) continue;
+    seenExportKeys.add(key);
+    dedupedVideoDataArray.push(clip);
+  }
+
+  const total = dedupedVideoDataArray.length;
   const baseTimestamp = Date.now();
   let processed = 0;
   const totalBatches = Math.ceil(total / EXPORT_BATCH_SIZE);
 
   for (let batchStart = 0; batchStart < total; batchStart += EXPORT_BATCH_SIZE) {
     const batchIndex = Math.floor(batchStart / EXPORT_BATCH_SIZE);
-    const batchItems = videoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
+    const batchItems = dedupedVideoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
     let zip: JSZip | null = new JSZip();
+    const folderName = `youtube_export_part${batchIndex + 1}`;
 
     for (let i = 0; i < batchItems.length; i++) {
       const clip = batchItems[i];
@@ -70,11 +117,12 @@ async function exportVideosInBatches(
 
       try {
         const mediaUrl = await resolveExportMediaUrl(clip);
+        if (!mediaUrl) throw new Error('No landscape media URL');
         const res = await fetch(mediaUrl);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
 
-        zip.file(filename, blob, {
+        zip.file(`${folderName}/${filename}`, blob, {
           date: new Date(baseTimestamp + globalIndex * EXPORT_FILE_TIME_STEP_MS),
         });
       } catch {
@@ -86,16 +134,10 @@ async function exportVideosInBatches(
       console.log(`Downloading Video ${processed} of ${total}`);
     }
 
-    if (batchIndex === 0 && scriptContent && scriptContent.trim().length > 0) {
-      zip.file('script.txt', scriptContent, {
-        date: new Date(baseTimestamp + total * EXPORT_FILE_TIME_STEP_MS),
-      });
-    }
-
     try {
       const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const partName = `YouTube_Export_Part${batchIndex + 1}.zip`;
-      saveAs(zipBlob, partName);
+      const partName = `${folderName}.zip`;
+      downloadZipBlob(zipBlob, partName);
     } finally {
       zip = null;
     }
@@ -118,6 +160,8 @@ export function GridPage({ onBack, onSettings }: Props) {
   // Nonce that triggers the card cascade animation when Select All is clicked.
   const [bulkSelectNonce, setBulkSelectNonce] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const exportInFlightRef = useRef(false);
+  const exportLockKey = '__clipscout_export_lock__';
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const [scrollProgress, setScrollProgress] = useState(0);
   const project = storage.getProject();
@@ -357,24 +401,64 @@ export function GridPage({ onBack, onSettings }: Props) {
   );
 
   async function handleExport() {
-    if (selectedCount === 0) return;
+    const g = globalThis as unknown as Record<string, unknown>;
+    if (selectedCount === 0 || exportInFlightRef.current || g[exportLockKey] === true) return;
+    exportInFlightRef.current = true;
+    g[exportLockKey] = true;
 
-    const allFlat: Clip[] = [];
-    segments.forEach((seg) => {
-      const segClips = allClips[seg.id] ?? [];
-      segClips.forEach((c) => {
-        if (selectedSet.has(c.id)) allFlat.push(c);
+    const clipById = new Map<string, Clip>();
+    Object.values(allClips).forEach((segClips) => {
+      segClips.forEach((clip) => {
+        if (!clipById.has(clip.id)) {
+          clipById.set(clip.id, clip);
+        }
       });
     });
 
+    // Build export list directly from selected ids to prevent segment-level duplicates.
+    // Preserves order but removes any accidental duplicate ids.
+    const selectionIdsUnique: string[] = [];
+    const seenSelectionIds = new Set<string>();
+    for (const id of selections) {
+      if (seenSelectionIds.has(id)) continue;
+      seenSelectionIds.add(id);
+      selectionIdsUnique.push(id);
+    }
+
+    const selectedClips = selectionIdsUnique
+      .map((id) => clipById.get(id))
+      .filter((clip): clip is Clip => Boolean(clip));
+
+    // Deduplicate by underlying media identity:
+    // - Pexels: stable video id (ignores page suffix)
+    // - Others: media URL fallback
+    const uniqueByMedia = new Map<string, Clip>();
+    selectedClips.forEach((clip) => {
+      const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
+      const mediaKey = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
+      if (!uniqueByMedia.has(mediaKey)) {
+        uniqueByMedia.set(mediaKey, clip);
+      }
+    });
+
+    const exportable = Array.from(uniqueByMedia.values()).filter(isLandscapeClip);
+    if (exportable.length === 0) {
+      addToast('error', 'No horizontal clips selected for export.');
+      exportInFlightRef.current = false;
+      return;
+    }
+    if (exportable.length < uniqueByMedia.size) {
+      addToast('info', `${uniqueByMedia.size - exportable.length} vertical clip(s) skipped.`);
+    }
+
     setExporting(true);
-    setExportProgress({ current: 0, total: allFlat.length });
+    setExportProgress({ current: 0, total: exportable.length });
 
     const scriptContent = project?.fullScript ?? '';
 
     try {
       await exportVideosInBatches(
-        allFlat,
+        exportable,
         (current, total) => setExportProgress({ current, total }),
         addToast,
         scriptContent,
@@ -384,6 +468,8 @@ export function GridPage({ onBack, onSettings }: Props) {
       addToast('error', 'Export failed. Please try again.');
     } finally {
       setExporting(false);
+      exportInFlightRef.current = false;
+      g[exportLockKey] = false;
     }
   }
 

@@ -101,7 +101,7 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, onSelectio
           alt=""
           loading="lazy"
           decoding="async"
-          className={`w-full h-full object-cover transition-opacity ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`w-full h-full object-contain bg-black transition-opacity ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setImgLoaded(true)}
           onError={() => setImgError(true)}
         />
@@ -119,7 +119,7 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, onSelectio
           alt=""
           loading="lazy"
           decoding="async"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain bg-black"
         />
       )}
 
@@ -128,7 +128,7 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, onSelectio
         <video
           ref={videoRef}
           src={clip.media_url}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain bg-black"
           loop
           playsInline
           onPlay={() => setIsPlaying(true)}

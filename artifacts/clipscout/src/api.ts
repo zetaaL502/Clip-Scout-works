@@ -13,13 +13,18 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
   const keywords = (segment.pexels_keywords ?? '').trim();
   if (!keywords) return [];
 
-  const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string }>) =>
+  const isLandscape = (width?: number, height?: number) =>
+    typeof width === 'number' && typeof height === 'number' && width > height;
+
+  const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number }>) =>
     data.slice(0, 4).map((item) => ({
     id: `pexels-${item.id}-${page}`,
     segmentId: segment.id,
     source: 'pexels' as const,
     thumbnail_url: item.thumbnail_url,
     media_url: item.media_url,
+    width: item.width,
+    height: item.height,
     }));
 
   try {
@@ -31,7 +36,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
     });
 
     if (res.ok) {
-      const data: Array<{ id: string; thumbnail_url: string; media_url: string }> = await res.json();
+      const data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number }> = await res.json();
       return mapClips(data);
     }
   } catch {
@@ -43,7 +48,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
     throw new Error('Pexels unavailable: server proxy failed and no fallback key in Settings.');
   }
 
-  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=4&page=${page}`;
+  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=20&page=${page}`;
   let directRes: Response | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -73,18 +78,25 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
     videos: Array<{
       id: number;
       image: string;
-      video_files: Array<{ quality: string; link: string; file_type: string }>;
+      width?: number;
+      height?: number;
+      video_files: Array<{ quality: string; link: string; file_type: string; width?: number; height?: number }>;
     }>;
   };
-  const normalized = (directData.videos ?? []).map((video) => {
+  const normalized = (directData.videos ?? [])
+    .filter((video) => isLandscape(video.width, video.height))
+    .map((video) => {
     const hdFile =
       video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
+      video.video_files.find((f) => f.file_type === 'video/mp4' && isLandscape(f.width, f.height)) ??
       video.video_files.find((f) => f.file_type === 'video/mp4') ??
       video.video_files[0];
     return {
       id: String(video.id),
       thumbnail_url: video.image,
       media_url: hdFile?.link ?? '',
+      width: video.width,
+      height: video.height,
     };
   });
   return mapClips(normalized);

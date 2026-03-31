@@ -15,6 +15,8 @@ export interface Clip {
   source: 'pexels' | 'giphy';
   thumbnail_url: string;
   media_url: string;
+  width?: number;
+  height?: number;
 }
 
 export interface Project {
