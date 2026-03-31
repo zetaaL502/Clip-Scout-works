@@ -303,6 +303,11 @@ export function GridPage({ onBack, onSettings }: Props) {
   const selectedSet = useMemo(() => new Set(selections), [selections]);
   const selectedCount = selections.length;
 
+  const allSelected = useMemo(() => {
+    const allClipsCount = segments.reduce((sum, seg) => sum + (allClips[seg.id] ?? []).length, 0);
+    return allClipsCount > 0 && selectedCount === allClipsCount;
+  }, [segments, allClips, selectedCount]);
+
   // Label rule from the spec:
   // - "Select All" when nothing is selected.
   // - Otherwise, show "Deselect All" when all are selected OR when the user has used Select All.
