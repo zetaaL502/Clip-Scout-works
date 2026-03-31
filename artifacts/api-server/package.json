@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development PORT=3000 pnpm run build && pnpm run start",
+    "dev": "cross-env NODE_ENV=development PORT=8080 pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
-   "start": "cross-env PORT=3000 node --enable-source-maps ./dist/index.mjs",
+    "start": "cross-env PORT=8080 node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
