@@ -70,6 +70,10 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
         id: `seg-${Date.now()}-${i}`,
         pexels_page: 1,
         giphy_page: 0,
+        pexels_keywords: s.pexels_keywords ?? '',
+        giphy_keywords: s.giphy_keywords ?? '',
+        text_body: s.text_body ?? '',
+        duration_estimate: s.duration_estimate ?? '',
       }));
 
       storage.setProject({ title: 'ClipScout Project', fullScript: script });

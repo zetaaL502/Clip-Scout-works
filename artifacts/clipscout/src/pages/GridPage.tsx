@@ -68,14 +68,16 @@ function isLandscapeClip(clip: Clip): boolean {
 
 async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
   if (clip.source !== 'pexels' || !isPexelsClipId(clip.id)) {
-    return clip.media_url;
+    return clip.media_url || null;
   }
   const videoId = parsePexelsVideoId(clip.id);
-  if (!videoId) return null;
+  if (!videoId) return clip.media_url || null;
   try {
-    return await fetchBestPexelsExportUrl(videoId);
+    const bestUrl = await fetchBestPexelsExportUrl(videoId);
+    return bestUrl || clip.media_url || null;
   } catch {
-    return null;
+    // Proxy unavailable — use the URL already on the clip
+    return clip.media_url || null;
   }
 }
 
@@ -118,7 +120,14 @@ async function exportVideosInBatches(
       try {
         const mediaUrl = await resolveExportMediaUrl(clip);
         if (!mediaUrl) throw new Error('No landscape media URL');
-        const res = await fetch(mediaUrl);
+        const dlController = new AbortController();
+        const dlTimeout = setTimeout(() => dlController.abort(), 45000);
+        let res: Response;
+        try {
+          res = await fetch(mediaUrl, { signal: dlController.signal });
+        } finally {
+          clearTimeout(dlTimeout);
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
 

@@ -104,8 +104,10 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
 
 export async function fetchGiphyClips(segment: Segment, page: number): Promise<Clip[]> {
   const apiKey = storage.getGiphyKey();
+  const keywords = (segment.giphy_keywords ?? '').trim();
+  if (!keywords) return [];
   const offset = (page - 1) * 4;
-  const url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(segment.giphy_keywords)}&limit=4&offset=${offset}&rating=g`;
+  const url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(keywords)}&limit=4&offset=${offset}&rating=g`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Giphy error: ${res.status}`);
   const data = await res.json();

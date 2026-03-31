@@ -20,7 +20,11 @@ function get<T>(key: string): T | null {
 }
 
 function set(key: string, value: unknown): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // QuotaExceededError — storage is full; silently ignore to prevent crash.
+  }
 }
 
 function keepHorizontalClip(clip: Clip): boolean {
