@@ -49,7 +49,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
     throw new Error('Pexels unavailable: server proxy failed and no fallback key in Settings.');
   }
 
-  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=20&page=${page}`;
+  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=20&page=${page}&min_duration=5&max_duration=30`;
   let directRes: Response | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
