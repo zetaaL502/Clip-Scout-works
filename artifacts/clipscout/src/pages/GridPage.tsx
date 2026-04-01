@@ -52,14 +52,6 @@ function parsePexelsVideoId(clipId: string): string | null {
   return match?.[1] ?? null;
 }
 
-function isLandscapeClip(clip: Clip): boolean {
-  if (typeof clip.width === 'number' && typeof clip.height === 'number') {
-    return clip.width > clip.height;
-  }
-  // Keep non-Pexels clips and unknown-size clips untouched.
-  return clip.source !== 'pexels';
-}
-
 async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
   if (clip.source !== 'pexels' || !isPexelsClipId(clip.id)) {
     return clip.media_url || null;
@@ -80,18 +72,7 @@ async function exportAllVideos(
   onProgress: ExportProgressUpdater,
   addToast: (type: 'success' | 'error' | 'info', message: string) => void,
 ): Promise<void> {
-  // Dedupe by underlying media identity (preserves first-seen order).
-  const seenExportKeys = new Set<string>();
-  const dedupedArray: Clip[] = [];
-  for (const clip of videoDataArray) {
-    const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
-    const key = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
-    if (seenExportKeys.has(key)) continue;
-    seenExportKeys.add(key);
-    dedupedArray.push(clip);
-  }
-
-  const total = dedupedArray.length;
+  const total = videoDataArray.length;
   const baseTimestamp = Date.now();
   let processed = 0;
   const zip = new JSZip();
@@ -434,25 +415,12 @@ export function GridPage({ onBack, onSettings }: Props) {
       if (clip) selectedClips.push(clip);
     }
 
-    // Deduplicate by underlying media identity, preserving segment order
-    const uniqueByMedia = new Map<string, Clip>();
-    selectedClips.forEach((clip) => {
-      const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
-      const mediaKey = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
-      if (!uniqueByMedia.has(mediaKey)) {
-        uniqueByMedia.set(mediaKey, clip);
-      }
-    });
-
-    const exportable = Array.from(uniqueByMedia.values()).filter(isLandscapeClip);
+    const exportable = selectedClips;
     if (exportable.length === 0) {
-      addToast('error', 'No horizontal clips selected for export.');
+      addToast('error', 'No clips selected for export.');
       exportInFlightRef.current = false;
       g[exportLockKey] = false;
       return;
-    }
-    if (exportable.length < uniqueByMedia.size) {
-      addToast('info', `${uniqueByMedia.size - exportable.length} vertical clip(s) skipped.`);
     }
 
     setExporting(true);

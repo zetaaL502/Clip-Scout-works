@@ -17,21 +17,14 @@ interface Props {
   onSelectionChange: (nextSelections?: string[]) => void;
 }
 
-// Builds an ordered list of keyword combos to try for "Add 4 More → Pexels".
-// Example: "busy city street night rain" →
-//   ["busy", "busy city", "city", "city street", "street", "street night", "night", "night rain", "rain"]
-function buildPexelsRetryCombos(keywords?: string | null): string[] {
+// Splits comma-separated keyword phrases for "Add 4 More → Pexels".
+// Example: "city skyline, money stack, luxury cars" →
+//   ["city skyline", "money stack", "luxury cars"]
+// Each "Add 4 More" click cycles to the next phrase, giving fresh results.
+function buildPexelsKeywordCycles(keywords?: string | null): string[] {
   const kw = keywords ?? '';
-  const words = kw.split(' ').filter((w) => w.length > 0);
-  if (words.length === 0) return [kw];
-  const combos: string[] = [];
-  for (let i = 0; i < words.length; i++) {
-    combos.push(words[i]);
-    if (i + 1 < words.length) {
-      combos.push(`${words[i]} ${words[i + 1]}`);
-    }
-  }
-  return combos;
+  const phrases = kw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+  return phrases.length > 0 ? phrases : [kw];
 }
 
 export function SegmentCard({
@@ -51,16 +44,15 @@ export function SegmentCard({
   const [loadingInitial, setLoadingInitial] = useState(!isPreloaded || initialClips.length === 0);
   const [showDropdown, setShowDropdown] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const [pexelsPage, setPexelsPage] = useState(segment.pexels_page);
   const [giphyPage, setGiphyPage] = useState(segment.giphy_page);
   const cardRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadedRef = useRef(isPreloaded && initialClips.length > 0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  // Index into the retry combo list for "Add 4 More → Pexels"
-  const pexelsRetryIndexRef = useRef(0);
-  const pexelsRetryCombos = useRef(buildPexelsRetryCombos(segment.pexels_keywords));
+  // Index into the keyword cycle list for "Add 4 More → Pexels"
+  const pexelsKeywordIndexRef = useRef(0);
+  const pexelsKeywordCycles = useRef(buildPexelsKeywordCycles(segment.pexels_keywords));
 
   // Fix for segments 2–5 spinning forever:
   // GridPage's async preload may resolve AFTER the IntersectionObserver runs its
@@ -177,14 +169,13 @@ export function SegmentCard({
     try {
       let newClips: Clip[] = [];
       if (source === 'pexels') {
-        // Cycle through keyword combos so each attempt uses a fresh word/phrase
-        const combos = pexelsRetryCombos.current;
-        const keyword = combos[pexelsRetryIndexRef.current % combos.length];
-        pexelsRetryIndexRef.current += 1;
-        const nextPage = pexelsPage + 1;
+        // Cycle through comma-separated keyword phrases so each click uses a fresh set
+        const cycles = pexelsKeywordCycles.current;
+        const keyword = cycles[pexelsKeywordIndexRef.current % cycles.length];
+        pexelsKeywordIndexRef.current += 1;
+        // Always fetch page 1 of the new keyword to get the best results for that phrase
         const broadSegment = { ...segment, pexels_keywords: keyword };
-        newClips = await fetchPexelsClips(broadSegment, nextPage);
-        setPexelsPage(nextPage);
+        newClips = await fetchPexelsClips(broadSegment, 1);
       } else {
         const nextPage = giphyPage + 1;
         newClips = await fetchGiphyClips(segment, nextPage);
