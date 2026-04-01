@@ -17,6 +17,7 @@ export interface Clip {
   media_url: string;
   width?: number;
   height?: number;
+  duration?: number; // seconds, Pexels only
 }
 
 export interface Project {
