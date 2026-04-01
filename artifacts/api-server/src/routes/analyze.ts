@@ -60,7 +60,6 @@ router.post("/analyze-script", async (req, res) => {
       contents: [{ role: "user", parts: [{ text: buildPrompt(script.trim()) }] }],
       config: {
         responseMimeType: "application/json",
-        maxOutputTokens: 8192,
       },
     });
 
