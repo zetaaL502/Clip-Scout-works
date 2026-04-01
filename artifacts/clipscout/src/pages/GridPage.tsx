@@ -52,19 +52,29 @@ function parsePexelsVideoId(clipId: string): string | null {
   return match?.[1] ?? null;
 }
 
+const VIDEO_DOWNLOAD_PROXY = '/api/video-download';
+
 async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
-  if (clip.source !== 'pexels' || !isPexelsClipId(clip.id)) {
-    return clip.media_url || null;
+  // First try to get the best quality URL from the server for Pexels clips
+  if (clip.source === 'pexels' && isPexelsClipId(clip.id)) {
+    const videoId = parsePexelsVideoId(clip.id);
+    if (videoId) {
+      try {
+        const bestUrl = await fetchBestPexelsExportUrl(videoId);
+        if (bestUrl) {
+          // Route through server proxy to avoid CORS
+          return `${VIDEO_DOWNLOAD_PROXY}?url=${encodeURIComponent(bestUrl)}`;
+        }
+      } catch {
+        // Fall through to media_url
+      }
+    }
   }
-  const videoId = parsePexelsVideoId(clip.id);
-  if (!videoId) return clip.media_url || null;
-  try {
-    const bestUrl = await fetchBestPexelsExportUrl(videoId);
-    return bestUrl || clip.media_url || null;
-  } catch {
-    // Proxy unavailable — use the URL already on the clip
-    return clip.media_url || null;
-  }
+
+  const rawUrl = clip.media_url || null;
+  if (!rawUrl) return null;
+  // Route all media URLs through the server proxy to avoid CORS on CDN downloads
+  return `${VIDEO_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
 }
 
 async function exportAllVideos(
@@ -79,7 +89,7 @@ async function exportAllVideos(
   const folderName = 'youtube_export';
 
   for (let i = 0; i < total; i++) {
-    const clip = dedupedArray[i];
+    const clip = videoDataArray[i];
     const fileNumber = String(i + 1).padStart(3, '0');
     const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
     const filename = `${fileNumber}.${ext}`;

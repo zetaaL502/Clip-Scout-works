@@ -170,4 +170,87 @@ router.get("/pexels-video/:videoId", async (req, res) => {
   }
 });
 
+// Proxies a video download through the server to avoid CORS restrictions.
+// Only allows CDN URLs from trusted video hosts (Pexels, Vimeo, etc.).
+router.get("/video-download", async (req, res) => {
+  const rawUrl = req.query["url"];
+  if (typeof rawUrl !== "string" || !rawUrl) {
+    res.status(400).json({ error: "url query param is required" });
+    return;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    res.status(400).json({ error: "Invalid URL" });
+    return;
+  }
+
+  // Allow only trusted video CDN hostnames
+  const allowedHosts = [
+    "videos.pexels.com",
+    "player.vimeo.com",
+    "vimeocdn.com",
+    "storage.googleapis.com",
+    "cdn.giphy.com",
+    "media.giphy.com",
+    "media0.giphy.com",
+    "media1.giphy.com",
+    "media2.giphy.com",
+    "media3.giphy.com",
+    "media4.giphy.com",
+  ];
+  const isAllowed = allowedHosts.some(
+    (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
+  );
+  if (!isAllowed) {
+    res.status(403).json({ error: "URL host not allowed" });
+    return;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+
+    const upstream = await fetch(rawUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ClipScout/1.0)",
+      },
+    });
+
+    clearTimeout(timer);
+
+    if (!upstream.ok) {
+      res.status(502).json({ error: `Upstream returned ${upstream.status}` });
+      return;
+    }
+
+    const contentType = upstream.headers.get("content-type") ?? "video/mp4";
+    const contentLength = upstream.headers.get("content-length");
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    res.setHeader("Cache-Control", "no-store");
+
+    if (upstream.body) {
+      const reader = upstream.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+    }
+
+    res.end();
+  } catch (err) {
+    const isAbort = (err as Error)?.name === "AbortError";
+    if (!res.headersSent) {
+      res.status(isAbort ? 504 : 502).json({ error: isAbort ? "Download timed out" : "Download failed" });
+    }
+  }
+});
+
 export default router;
