@@ -50,8 +50,9 @@ export function SegmentCard({
   const loadedRef = useRef(isPreloaded && initialClips.length > 0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  // Index into the keyword cycle list for "Add 4 More → Pexels"
-  const pexelsKeywordIndexRef = useRef(0);
+  // Index into the keyword cycle list for "Add 4 More → Pexels".
+  // Starts at 1 (not 0) because the initial load already consumed keyword-page-1.
+  const pexelsKeywordIndexRef = useRef(1);
   const pexelsKeywordCycles = useRef(buildPexelsKeywordCycles(segment.pexels_keywords));
 
   // Fix for segments 2–5 spinning forever:
