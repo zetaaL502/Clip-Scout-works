@@ -1,5 +1,9 @@
 import { Router, type IRouter } from "express";
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createReadStream, unlinkSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
 
@@ -175,47 +179,99 @@ router.get("/pexels-video/:videoId", async (req, res) => {
 
 const MAX_CLIP_SECONDS = 30;
 
-// Receives a raw MP4 video blob from the browser, trims it to MAX_CLIP_SECONDS
-// using FFmpeg (stream copy — no re-encode, very fast), and streams the result back.
-// The browser downloads the clip directly from the CDN (CORS is allowed), then sends
-// it here; we avoid any server-side CDN fetch restriction.
-router.post("/trim-video", (req, res) => {
-  res.setHeader("Content-Type", "video/mp4");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "no-store");
+function makeTmpPath(): string {
+  return join(tmpdir(), `clipscout-${randomUUID()}.mp4`);
+}
+
+function cleanupTmp(path: string): void {
+  try { unlinkSync(path); } catch { /* ignore */ }
+}
+
+// Runs FFmpeg with stdin piped from `feedFn`, output written to a temp file.
+// Returns the temp file path on success. The caller must delete the temp file.
+// Using a real output file (not pipe:1) lets FFmpeg write a proper moov atom with
+// correct duration — fragmented/empty_moov variants cause editing apps to show 0s duration.
+async function runFfmpegTrim(
+  feedFn: (stdin: NodeJS.WritableStream) => void,
+  logWarn: (msg: string) => void,
+  logError: (msg: string) => void,
+): Promise<string> {
+  const tmpPath = makeTmpPath();
 
   const ffmpeg = spawn("ffmpeg", [
     "-loglevel", "error",
-    "-i", "pipe:0",                           // read uploaded video from stdin
-    "-t", String(MAX_CLIP_SECONDS),            // trim to 30 seconds max
-    "-c", "copy",                              // stream copy — no re-encoding
-    "-f", "mp4",
-    "-movflags", "frag_keyframe+empty_moov",  // fragmented MP4 (streamable)
-    "pipe:1",                                  // write trimmed video to stdout
+    "-i", "pipe:0",
+    "-t", String(MAX_CLIP_SECONDS),
+    "-c", "copy",
+    "-movflags", "+faststart",  // relocate moov to front; correct duration written after copy
+    tmpPath,                     // real file output — FFmpeg writes proper duration metadata
   ], { stdio: ["pipe", "pipe", "pipe"] });
 
-  // Pipe request body (uploaded video) → FFmpeg stdin
-  req.pipe(ffmpeg.stdin);
+  feedFn(ffmpeg.stdin);
 
-  // Pipe FFmpeg stdout → HTTP response
-  ffmpeg.stdout.pipe(res);
-
+  const stderrChunks: string[] = [];
   ffmpeg.stderr.on("data", (chunk: Buffer) => {
-    req.log.warn({ msg: chunk.toString() }, "ffmpeg trim stderr");
+    stderrChunks.push(chunk.toString());
   });
 
-  ffmpeg.on("error", (err) => {
-    req.log.error({ err }, "ffmpeg trim spawn error");
-    if (!res.headersSent) res.status(500).end();
-    else res.end();
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg.on("error", (err) => {
+      logError(`ffmpeg spawn error: ${err.message}`);
+      reject(err);
+    });
+    ffmpeg.on("close", (code) => {
+      if (stderrChunks.length > 0) logWarn(stderrChunks.join(""));
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}`));
+      }
+    });
   });
 
-  req.on("error", () => ffmpeg.stdin.destroy());
+  return tmpPath;
+}
+
+// Streams a completed temp file as the HTTP response and then deletes it.
+function sendTmpFile(tmpPath: string, res: import("express").Response): void {
+  let stat: ReturnType<typeof statSync>;
+  try {
+    stat = statSync(tmpPath);
+  } catch {
+    cleanupTmp(tmpPath);
+    if (!res.headersSent) res.status(500).json({ error: "Temp file missing after trim" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "video/mp4");
+  res.setHeader("Content-Length", stat.size);
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "no-store");
+
+  const stream = createReadStream(tmpPath);
+  stream.pipe(res);
+  stream.on("close", () => cleanupTmp(tmpPath));
+  stream.on("error", () => cleanupTmp(tmpPath));
+}
+
+// Receives a raw MP4 video blob from the browser, trims it and returns a proper MP4.
+router.post("/trim-video", async (req, res) => {
+  let tmpPath: string | null = null;
+  try {
+    tmpPath = await runFfmpegTrim(
+      (stdin) => { req.pipe(stdin); req.on("error", () => stdin.destroy()); },
+      (msg) => req.log.warn({ msg }, "ffmpeg trim stderr"),
+      (msg) => req.log.error({ msg }, "ffmpeg trim error"),
+    );
+    sendTmpFile(tmpPath, res);
+  } catch {
+    if (tmpPath) cleanupTmp(tmpPath);
+    if (!res.headersSent) res.status(500).json({ error: "Trim failed" });
+  }
 });
 
-// Accepts a Pexels CDN URL, fetches it server-side, trims to MAX_CLIP_SECONDS via
-// FFmpeg stream copy, and streams the result back. This eliminates the expensive
-// browser-download → browser-upload round-trip from the old /trim-video flow.
+// Accepts a Pexels CDN URL, fetches it server-side, trims to MAX_CLIP_SECONDS,
+// and returns a proper MP4 with correct duration metadata.
 router.post("/trim-video-url", async (req, res) => {
   const { url } = req.body as { url?: string };
   if (!url || typeof url !== "string") {
@@ -240,13 +296,10 @@ router.post("/trim-video-url", async (req, res) => {
     return;
   }
 
-  res.setHeader("Content-Type", "video/mp4");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "no-store");
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
 
+  let tmpPath: string | null = null;
   try {
     const upstream = await fetch(url, {
       signal: controller.signal,
@@ -260,48 +313,34 @@ router.post("/trim-video-url", async (req, res) => {
     clearTimeout(timer);
 
     if (!upstream.ok || !upstream.body) {
-      if (!res.headersSent) res.status(502).json({ error: `Upstream returned ${upstream.status}` });
+      res.status(502).json({ error: `Upstream returned ${upstream.status}` });
       return;
     }
 
-    const ffmpeg = spawn("ffmpeg", [
-      "-loglevel", "error",
-      "-i", "pipe:0",
-      "-t", String(MAX_CLIP_SECONDS),
-      "-c", "copy",
-      "-f", "mp4",
-      "-movflags", "frag_keyframe+empty_moov",
-      "pipe:1",
-    ], { stdio: ["pipe", "pipe", "pipe"] });
+    const upstreamBody = upstream.body;
+    tmpPath = await runFfmpegTrim(
+      (stdin) => {
+        const reader = upstreamBody.getReader();
+        (async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) { stdin.end(); break; }
+              if (!stdin.write(value)) {
+                await new Promise<void>((resolve) => stdin.once("drain", resolve));
+              }
+            }
+          } catch { stdin.destroy(); }
+        })();
+      },
+      (msg) => req.log.warn({ msg }, "ffmpeg trim-url stderr"),
+      (msg) => req.log.error({ msg }, "ffmpeg trim-url error"),
+    );
 
-    ffmpeg.stdout.pipe(res);
-
-    const reader = upstream.body.getReader();
-    (async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) { ffmpeg.stdin.end(); break; }
-          if (!ffmpeg.stdin.write(value)) {
-            await new Promise<void>((resolve) => ffmpeg.stdin.once("drain", resolve));
-          }
-        }
-      } catch { ffmpeg.stdin.destroy(); }
-    })();
-
-    ffmpeg.stderr.on("data", (chunk: Buffer) => {
-      req.log.warn({ msg: chunk.toString() }, "ffmpeg trim-url stderr");
-    });
-
-    ffmpeg.on("error", (err) => {
-      req.log.error({ err }, "ffmpeg trim-url spawn error");
-      if (!res.headersSent) res.status(500).end();
-      else res.end();
-    });
-
-    await new Promise<void>((resolve) => ffmpeg.on("close", resolve));
+    sendTmpFile(tmpPath, res);
   } catch (err) {
     clearTimeout(timer);
+    if (tmpPath) cleanupTmp(tmpPath);
     const isAbort = (err as Error)?.name === "AbortError";
     if (!res.headersSent) {
       res.status(isAbort ? 504 : 502).json({ error: isAbort ? "Fetch timed out" : "Failed to fetch video" });
