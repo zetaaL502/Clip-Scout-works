@@ -13,15 +13,9 @@ interface Props {
   onSettings: () => void;
 }
 
-const EXPORT_BATCH_SIZE = 100;
-const EXPORT_BATCH_DELAY_MS = 2000;
 const EXPORT_FILE_TIME_STEP_MS = 60_000;
 
 type ExportProgressUpdater = (current: number, total: number) => void;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function downloadZipBlob(zipBlob: Blob, filename: string): void {
   const nav = navigator as unknown as { msSaveOrOpenBlob?: (blob: Blob, name: string) => void };
@@ -81,80 +75,61 @@ async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
   }
 }
 
-async function exportVideosInBatches(
+async function exportAllVideos(
   videoDataArray: Clip[],
   onProgress: ExportProgressUpdater,
   addToast: (type: 'success' | 'error' | 'info', message: string) => void,
-  scriptContent?: string,
 ): Promise<void> {
-  // Extra safety: dedupe again at export-time in case cached selections/clips contain repeats.
-  // Preserves first-seen order.
+  // Dedupe by underlying media identity (preserves first-seen order).
   const seenExportKeys = new Set<string>();
-  const dedupedVideoDataArray: Clip[] = [];
+  const dedupedArray: Clip[] = [];
   for (const clip of videoDataArray) {
     const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
     const key = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
     if (seenExportKeys.has(key)) continue;
     seenExportKeys.add(key);
-    dedupedVideoDataArray.push(clip);
+    dedupedArray.push(clip);
   }
 
-  const total = dedupedVideoDataArray.length;
+  const total = dedupedArray.length;
   const baseTimestamp = Date.now();
   let processed = 0;
-  const totalBatches = Math.ceil(total / EXPORT_BATCH_SIZE);
+  const zip = new JSZip();
+  const folderName = 'youtube_export';
 
-  for (let batchStart = 0; batchStart < total; batchStart += EXPORT_BATCH_SIZE) {
-    const batchIndex = Math.floor(batchStart / EXPORT_BATCH_SIZE);
-    const batchItems = dedupedVideoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
-    let zip: JSZip | null = new JSZip();
-    const folderName = `youtube_export_part${batchIndex + 1}`;
-
-    for (let i = 0; i < batchItems.length; i++) {
-      const clip = batchItems[i];
-      const globalIndex = batchStart + i;
-      const fileNumber = String(globalIndex + 1).padStart(3, '0');
-      const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
-      const filename = `${fileNumber}.${ext}`;
-
-      try {
-        const mediaUrl = await resolveExportMediaUrl(clip);
-        if (!mediaUrl) throw new Error('No landscape media URL');
-        const dlController = new AbortController();
-        const dlTimeout = setTimeout(() => dlController.abort(), 45000);
-        let res: Response;
-        try {
-          res = await fetch(mediaUrl, { signal: dlController.signal });
-        } finally {
-          clearTimeout(dlTimeout);
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-
-        zip.file(`${folderName}/${filename}`, blob, {
-          date: new Date(baseTimestamp + globalIndex * EXPORT_FILE_TIME_STEP_MS),
-        });
-      } catch {
-        addToast('error', `Video ${globalIndex + 1} failed, skipped.`);
-      }
-
-      processed += 1;
-      onProgress(processed, total);
-      console.log(`Downloading Video ${processed} of ${total}`);
-    }
+  for (let i = 0; i < total; i++) {
+    const clip = dedupedArray[i];
+    const fileNumber = String(i + 1).padStart(3, '0');
+    const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
+    const filename = `${fileNumber}.${ext}`;
 
     try {
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const partName = `${folderName}.zip`;
-      downloadZipBlob(zipBlob, partName);
-    } finally {
-      zip = null;
+      const mediaUrl = await resolveExportMediaUrl(clip);
+      if (!mediaUrl) throw new Error('No media URL');
+      const dlController = new AbortController();
+      const dlTimeout = setTimeout(() => dlController.abort(), 45000);
+      let res: Response;
+      try {
+        res = await fetch(mediaUrl, { signal: dlController.signal });
+      } finally {
+        clearTimeout(dlTimeout);
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+
+      zip.file(`${folderName}/${filename}`, blob, {
+        date: new Date(baseTimestamp + i * EXPORT_FILE_TIME_STEP_MS),
+      });
+    } catch {
+      addToast('error', `Clip ${i + 1} failed to download, skipped.`);
     }
 
-    if (batchIndex < totalBatches - 1) {
-      await sleep(EXPORT_BATCH_DELAY_MS);
-    }
+    processed += 1;
+    onProgress(processed, total);
   }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  downloadZipBlob(zipBlob, `${folderName}.zip`);
 }
 
 export function GridPage({ onBack, onSettings }: Props) {
@@ -439,18 +414,27 @@ export function GridPage({ onBack, onSettings }: Props) {
       });
     });
 
-    // Get selected clips in order, preserving each individually even if same URL
+    // Sort selections by segment order (segment index, then clip index within segment)
+    // so the zip always exports 001, 002, 003... in script order regardless of click order.
+    const sortedSelections = [...selections].sort((a, b) => {
+      const partsA = a.split('_');
+      const partsB = b.split('_');
+      const segA = parseInt(partsA[1] ?? '0', 10);
+      const segB = parseInt(partsB[1] ?? '0', 10);
+      if (segA !== segB) return segA - segB;
+      const clipA = parseInt(partsA[3] ?? '0', 10);
+      const clipB = parseInt(partsB[3] ?? '0', 10);
+      return clipA - clipB;
+    });
+
+    // Build ordered clip list from sorted selections
     const selectedClips: Clip[] = [];
-    for (const key of selections) {
+    for (const key of sortedSelections) {
       const clip = clipByKey.get(key);
-      if (clip) {
-        selectedClips.push(clip);
-      }
+      if (clip) selectedClips.push(clip);
     }
 
-    // Deduplicate by underlying media identity:
-    // - Pexels: stable video id (ignores page suffix)
-    // - Others: media URL fallback
+    // Deduplicate by underlying media identity, preserving segment order
     const uniqueByMedia = new Map<string, Clip>();
     selectedClips.forEach((clip) => {
       const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
@@ -464,6 +448,7 @@ export function GridPage({ onBack, onSettings }: Props) {
     if (exportable.length === 0) {
       addToast('error', 'No horizontal clips selected for export.');
       exportInFlightRef.current = false;
+      g[exportLockKey] = false;
       return;
     }
     if (exportable.length < uniqueByMedia.size) {
@@ -473,14 +458,11 @@ export function GridPage({ onBack, onSettings }: Props) {
     setExporting(true);
     setExportProgress({ current: 0, total: exportable.length });
 
-    const scriptContent = project?.fullScript ?? '';
-
     try {
-      await exportVideosInBatches(
+      await exportAllVideos(
         exportable,
         (current, total) => setExportProgress({ current, total }),
         addToast,
-        scriptContent,
       );
       addToast('success', 'Export ready! Downloading now…');
     } catch {

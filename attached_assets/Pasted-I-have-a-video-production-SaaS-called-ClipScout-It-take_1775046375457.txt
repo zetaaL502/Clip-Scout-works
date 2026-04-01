@@ -1,0 +1,43 @@
+I have a video production SaaS called ClipScout. It takes a script, analyzes it with Groq AI, finds matching stock footage from Pexels, and exports everything as a zip file. Here are all the issues that need fixing:
+
+**1. Export zip — remove all splitting logic**
+Currently the export is broken and only exports some videos. Remove ALL zip splitting logic completely. Every selected video should export into ONE single zip file regardless of how many videos are selected. No limits, no multiple zips. Just one zip with everything inside.
+
+**2. Export order — always follow segment order**
+Videos must always export in segment order 001, 002, 003 regardless of which order the user selected the clips. Even if segment 5 was clicked first, the zip should always have 001 = segment 1 clip, 002 = segment 2 clip etc. Sort by segment order_index before exporting.
+
+**3. Groq rate limiting and segmentation failures**
+For long scripts over 400 words the script gets split into two parts and sent to Groq separately with a 10 second delay between calls. The problem is Groq returns 429 too many requests frequently. Fix this by:
+* If Groq returns 429 automatically wait 60 seconds and retry up to 3 times before failing
+* If Groq returns incomplete segments retry that chunk automatically
+* Add proper error messages so user knows what is happening
+* Keep max_tokens at 6000 per call
+* Keep model as llama-3.3-70b-versatile
+
+**4. Pexels keywords are always wrong**
+The GROQ_PROMPT currently generates weird specific keywords that Pexels has no footage for. Rewrite the pexels_keywords instruction in GROQ_PROMPT to strictly enforce simple generic visual keywords only. Rules:
+* Maximum 3 words per keyword string
+* Must be broad visual concepts stock footage sites definitely have
+* Good examples: "city skyline", "luxury apartment", "private jet", "airport crowd", "cash money", "desert highway", "skyscraper night", "business meeting", "ocean sunset", "crowd walking"
+* Bad examples: "ultra wealthy expat crisis", "missile strike dubai", "billionaire tax calculation"
+* Tell Groq: think about what generic B-roll footage would visually represent this scene, not the literal topic
+
+**5. Backend Pexels proxy keeps returning 500**
+The backend proxy at /api/pexels-proxy keeps breaking with 500 errors. The frontend fallback handles it but the backend should work reliably too. Fix the backend proxy. If it fails for any reason the frontend fallback should kick in completely silently with no errors shown to the user at all.
+
+**6. Groq prompt — segment quality**
+Sometimes Groq does not segment the full script properly and stops early or misses sections. In the GROQ_PROMPT make it absolutely clear:
+* Every single word of the script must appear in a segment
+* Never stop early
+* Never skip any part
+* Create as many segments as needed to cover everything
+* Each segment must be 50-75 words, never less than 30, never more than 100
+
+**7. General code quality**
+* Add proper loading states so user knows when Groq is processing
+* Add clear error messages explaining what went wrong and what to do
+* Make sure all async operations have proper error handling and don't silently fail
+
+---
+
+After making all these changes please test the flow end to end and make sure everything works together properly before finishing.

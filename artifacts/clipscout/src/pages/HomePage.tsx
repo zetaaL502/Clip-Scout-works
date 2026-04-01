@@ -5,13 +5,6 @@ import { storage } from '../storage';
 import { useToastCtx } from '../context/ToastContext';
 import type { Segment } from '../types';
 
-const STATUS_MESSAGES = [
-  'Reading your script…',
-  'Splitting into segments…',
-  'Generating search keywords…',
-  'Almost ready…',
-];
-
 interface Props {
   onAnalyzed: () => void;
   onSettings: () => void;
@@ -21,10 +14,10 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
   const { addToast } = useToastCtx();
   const [script, setScript] = useState('');
   const [loading, setLoading] = useState(false);
-  const [statusIdx, setStatusIdx] = useState(0);
+  const [statusMsg, setStatusMsg] = useState('Analyzing script…');
   const [scriptError, setScriptError] = useState('');
   const [hasProject, setHasProject] = useState(false);
-  const statusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const project = storage.getProject();
@@ -33,17 +26,9 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
   }, []);
 
   useEffect(() => {
-    if (loading) {
-      statusIntervalRef.current = setInterval(() => {
-        setStatusIdx((prev) => (prev + 1) % STATUS_MESSAGES.length);
-      }, 2000);
-    } else {
-      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
-      setStatusIdx(0);
+    if (!loading) {
+      setStatusMsg('Analyzing script…');
     }
-    return () => {
-      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
-    };
   }, [loading]);
 
   function validate(): boolean {
@@ -63,8 +48,17 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
     }
 
     setLoading(true);
+    setStatusMsg('Reading your script…');
     try {
-      const rawSegments = await analyzeScript(script);
+      const rawSegments = await analyzeScript(script, (msg) => {
+        setStatusMsg(msg);
+      });
+
+      if (rawSegments.length === 0) {
+        addToast('error', 'Groq returned no segments. Please try again.');
+        return;
+      }
+
       const segments: Segment[] = rawSegments.map((s, i) => ({
         ...s,
         id: `seg-${Date.now()}-${i}`,
@@ -82,13 +76,16 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
       addToast('success', `Script analyzed! ${segments.length} segments created.`);
       onAnalyzed();
     } catch (err) {
-      const msg = (err as Error).message;
+      const msg = (err as Error).message ?? '';
       if (msg === 'TIMEOUT') {
         addToast('error', 'Groq timed out. Please try again.');
+      } else if (msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('rate limited')) {
+        addToast('error', msg);
       } else {
-        addToast('error', 'Script analysis failed. Please try again.');
+        addToast('error', `Script analysis failed: ${msg || 'Please try again.'}`);
       }
     } finally {
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
       setLoading(false);
     }
   }
@@ -152,13 +149,19 @@ export function HomePage({ onAnalyzed, onSettings }: Props) {
             >
               {loading ? (
                 <>
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>{STATUS_MESSAGES[statusIdx]}</span>
+                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
+                  <span className="text-sm text-center leading-snug">{statusMsg}</span>
                 </>
               ) : (
                 'Analyze Script & Find Clips →'
               )}
             </button>
+
+            {loading && (
+              <p className="text-center text-xs text-gray-500">
+                Long scripts may take 1–2 minutes. Do not close this tab.
+              </p>
+            )}
           </div>
         </div>
       </div>
