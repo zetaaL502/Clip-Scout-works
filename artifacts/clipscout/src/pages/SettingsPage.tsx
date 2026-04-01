@@ -9,20 +9,18 @@ interface Props {
 }
 
 export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
-  const [groqKey, setGroqKey] = useState(storage.getGroqKey());
   const [giphyKey, setGiphyKey] = useState(storage.getGiphyKey());
   const [pexelsKey, setPexelsKey] = useState(storage.getPexelsKey());
   const { addToast } = useToastCtx();
 
   function handleSave() {
-    if (!groqKey.trim() || !giphyKey.trim()) {
-      addToast('error', 'Both API keys are required.');
+    if (!giphyKey.trim()) {
+      addToast('error', 'Giphy API key is required.');
       return;
     }
-    storage.setGroqKey(groqKey.trim());
     storage.setGiphyKey(giphyKey.trim());
     storage.setPexelsKey(pexelsKey.trim());
-    addToast('success', 'API keys saved!');
+    addToast('success', 'Settings saved!');
     onSave();
   }
 
@@ -42,18 +40,11 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
         </div>
 
         <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Groq API Key
-            </label>
-            <input
-              type="password"
-              value={groqKey}
-              onChange={(e) => setGroqKey(e.target.value)}
-              placeholder="gsk_..."
-              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
-            />
-            <p className="mt-1 text-xs text-gray-500">Used to analyze your script with AI</p>
+          <div className="bg-[#111] border border-gray-800 rounded-xl p-4">
+            <p className="text-sm text-gray-300 font-medium mb-1">Script Analysis</p>
+            <p className="text-xs text-gray-500">
+              Powered by Gemini AI — no API key needed. Script analysis is handled automatically by the server.
+            </p>
           </div>
 
           <div>
@@ -72,7 +63,7 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Pexels API Key (optional fallback)
+              Pexels API Key <span className="text-gray-600">(optional fallback)</span>
             </label>
             <input
               type="password"
@@ -82,19 +73,15 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
               className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Used only when server proxy is unavailable.
+              Videos load via server proxy. This key is only used if the proxy is unavailable.
             </p>
           </div>
-
-          <p className="text-xs text-gray-500">
-            Pexels usually runs via server proxy. Optional key enables client fallback.
-          </p>
 
           <button
             onClick={handleSave}
             className="w-full bg-[#22c55e] hover:bg-[#16a34a] text-white font-semibold py-4 rounded-xl text-lg transition-colors active:scale-95"
           >
-            Save Keys
+            Save Settings
           </button>
         </div>
       </div>

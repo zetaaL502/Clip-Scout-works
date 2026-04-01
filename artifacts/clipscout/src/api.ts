@@ -3,6 +3,7 @@ import { storage } from './storage';
 
 const PEXELS_PROXY = '/api/pexels-proxy';
 const PEXELS_VIDEO_PROXY = '/api/pexels-video';
+const ANALYZE_SCRIPT_ENDPOINT = '/api/analyze-script';
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 function delay(ms: number): Promise<void> {
@@ -137,154 +138,45 @@ export async function fetchBestPexelsExportUrl(videoId: string): Promise<string>
 
 type RawSegment = Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>;
 
-const GROQ_PROMPT = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
-
-CRITICAL RULE — COVER THE ENTIRE SCRIPT: You MUST cover every single word of the script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part. Do NOT summarize. Every sentence must appear verbatim in exactly one segment. Create as many segments as needed to cover everything.
-
-Segmentation rules:
-- Split the full script into logical segments of approximately 50–75 words each.
-- Never cut mid-sentence.
-- Each segment must be between 30 and 100 words — never shorter, never longer.
-- The text_body of every segment must be the EXACT script text copied verbatim.
-- All segments combined must reproduce the ENTIRE script word for word with nothing missing.
-
-For pexels_keywords — STRICT RULES:
-- Write 2–3 words maximum per keyword string.
-- ONLY use broad, generic visual concepts that stock footage websites definitely have.
-- Think: what common B-roll footage would visually represent this scene? NOT the literal topic.
-- GOOD examples: "city skyline", "luxury apartment", "private jet", "airport crowd", "cash money", "desert highway", "skyscraper night", "business meeting", "ocean sunset", "crowd walking", "office work", "highway cars", "mountain landscape", "shopping mall", "restaurant dining"
-- BAD examples: "ultra wealthy expat crisis", "missile strike dubai", "billionaire tax calculation", "geopolitical tension", "economic collapse forecast"
-- If the topic is niche or abstract, find the closest VISUAL equivalent. A segment about taxes? Use "paperwork desk". About war? Use "military soldiers". About wealth? Use "luxury lifestyle".
-
-For giphy_keywords:
-- 2–3 words for a fun expressive GIF. Example: "mind blown", "money rain", "shocked face"
-
-For duration_estimate:
-- Estimated speaking time. Example: "~15 seconds"
-
-Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
-{
-  "segments": [
-    {
-      "order_index": 1,
-      "text_body": "exact script text for this segment",
-      "pexels_keywords": "city skyline",
-      "giphy_keywords": "mind blown",
-      "duration_estimate": "~15 seconds"
-    }
-  ]
-}
-
-Full script to segment (cover ALL of it):
-${script}`;
-
-
-// Makes a single Groq API call for one chunk of the script.
-// Retries up to 3 times on 429 (rate limit) with a 60-second wait between attempts.
-async function callGroq(scriptChunk: string, onStatus?: (msg: string) => void): Promise<RawSegment[]> {
-  const apiKey = storage.getGroqKey();
-  const MAX_ATTEMPTS = 3;
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000);
-
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          response_format: { type: 'json_object' },
-          max_tokens: 6000,
-          messages: [{ role: 'user', content: GROQ_PROMPT(scriptChunk) }],
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (res.status === 429) {
-        if (attempt < MAX_ATTEMPTS - 1) {
-          onStatus?.(`Groq rate limited. Waiting 60 seconds before retry ${attempt + 1} of ${MAX_ATTEMPTS - 1}…`);
-          await delay(60000);
-          onStatus?.('Retrying Groq…');
-          continue;
-        }
-        throw new Error('Groq is rate limited. Please wait a few minutes and try again.');
-      }
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error?.message ?? `Groq error: ${res.status}`);
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content ?? '{}';
-      const parsed = JSON.parse(content);
-      const segments: RawSegment[] = parsed.segments ?? [];
-
-      // If we got zero segments for a non-trivial chunk, retry once
-      const wordCount = scriptChunk.trim().split(/\s+/).length;
-      if (segments.length === 0 && wordCount > 30 && attempt < MAX_ATTEMPTS - 1) {
-        onStatus?.('Groq returned incomplete segments. Retrying…');
-        await delay(3000);
-        continue;
-      }
-
-      return segments;
-    } catch (e) {
-      clearTimeout(timeout);
-      if ((e as Error).name === 'AbortError') throw new Error('TIMEOUT');
-      // Re-throw rate limit messages and other terminal errors
-      if (attempt === MAX_ATTEMPTS - 1) throw e;
-      // Unexpected network error — retry
-      onStatus?.(`Groq request failed. Retrying in 5 seconds…`);
-      await delay(5000);
-    }
-  }
-
-  return [];
-}
-
-// Finds a good sentence boundary split point near the middle of the script.
-function findSplitPoint(script: string): number {
-  const mid = Math.floor(script.length / 2);
-  const forward = script.indexOf('. ', mid);
-  if (forward !== -1) return forward + 2;
-  const backward = script.lastIndexOf('. ', mid);
-  if (backward !== -1) return backward + 2;
-  return mid;
-}
-
+// Analyzes the full script by sending it to the backend Gemini endpoint in one call.
+// Gemini 2.5 Flash handles even 15-minute scripts (2,500+ words) without splitting.
 export async function analyzeScript(script: string, onStatus?: (msg: string) => void): Promise<RawSegment[]> {
-  const wordCount = script.trim().split(/\s+/).length;
+  onStatus?.('Sending script to Gemini AI…');
 
-  // For long scripts, split into two halves and make two sequential Groq calls
-  // with a delay between them to avoid rate limiting.
-  if (wordCount > 400) {
-    const splitAt = findSplitPoint(script);
-    const firstHalf = script.slice(0, splitAt).trim();
-    const secondHalf = script.slice(splitAt).trim();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
 
-    onStatus?.('Analyzing first half of script…');
-    const firstSegs = await callGroq(firstHalf, onStatus);
+  try {
+    const res = await fetch(ANALYZE_SCRIPT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script }),
+      signal: controller.signal,
+    });
 
-    onStatus?.('Waiting before second Groq call…');
-    await delay(10000);
+    clearTimeout(timeout);
 
-    onStatus?.('Analyzing second half of script…');
-    const secondSegs = await callGroq(secondHalf, onStatus);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(body.error ?? `Server error: ${res.status}`);
+    }
 
-    // Re-index order_index across both halves
-    const combined = [...firstSegs, ...secondSegs];
-    combined.forEach((seg, i) => { seg.order_index = i + 1; });
-    return combined;
+    onStatus?.('Processing segments…');
+
+    const data = await res.json() as { segments?: RawSegment[] };
+    const segments = data.segments ?? [];
+
+    if (segments.length === 0) {
+      throw new Error('Gemini returned no segments. Please try again.');
+    }
+
+    // Normalize order_index to be sequential from 1
+    segments.forEach((seg, i) => { seg.order_index = i + 1; });
+
+    return segments;
+  } catch (e) {
+    clearTimeout(timeout);
+    if ((e as Error).name === 'AbortError') throw new Error('TIMEOUT');
+    throw e;
   }
-
-  onStatus?.('Analyzing script…');
-  return callGroq(script, onStatus);
 }

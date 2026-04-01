@@ -15,9 +15,8 @@ function AppContent() {
   const [needsKeys, setNeedsKeys] = useState(false);
 
   useEffect(() => {
-    const groq = storage.getGroqKey();
     const giphy = storage.getGiphyKey();
-    if (!groq || !giphy) {
+    if (!giphy) {
       setNeedsKeys(true);
     }
     setKeysChecked(true);
