@@ -213,6 +213,102 @@ router.post("/trim-video", (req, res) => {
   req.on("error", () => ffmpeg.stdin.destroy());
 });
 
+// Accepts a Pexels CDN URL, fetches it server-side, trims to MAX_CLIP_SECONDS via
+// FFmpeg stream copy, and streams the result back. This eliminates the expensive
+// browser-download → browser-upload round-trip from the old /trim-video flow.
+router.post("/trim-video-url", async (req, res) => {
+  const { url } = req.body as { url?: string };
+  if (!url || typeof url !== "string") {
+    res.status(400).json({ error: "url is required" });
+    return;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    res.status(400).json({ error: "Invalid URL" });
+    return;
+  }
+
+  const ALLOWED_TRIM_HOSTS = ["videos.pexels.com"];
+  const isAllowed = ALLOWED_TRIM_HOSTS.some(
+    (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`)
+  );
+  if (!isAllowed) {
+    res.status(403).json({ error: "URL host not allowed" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "video/mp4");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "no-store");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
+
+  try {
+    const upstream = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://www.pexels.com/",
+        "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9",
+      },
+    });
+
+    clearTimeout(timer);
+
+    if (!upstream.ok || !upstream.body) {
+      if (!res.headersSent) res.status(502).json({ error: `Upstream returned ${upstream.status}` });
+      return;
+    }
+
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel", "error",
+      "-i", "pipe:0",
+      "-t", String(MAX_CLIP_SECONDS),
+      "-c", "copy",
+      "-f", "mp4",
+      "-movflags", "frag_keyframe+empty_moov",
+      "pipe:1",
+    ], { stdio: ["pipe", "pipe", "pipe"] });
+
+    ffmpeg.stdout.pipe(res);
+
+    const reader = upstream.body.getReader();
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { ffmpeg.stdin.end(); break; }
+          if (!ffmpeg.stdin.write(value)) {
+            await new Promise<void>((resolve) => ffmpeg.stdin.once("drain", resolve));
+          }
+        }
+      } catch { ffmpeg.stdin.destroy(); }
+    })();
+
+    ffmpeg.stderr.on("data", (chunk: Buffer) => {
+      req.log.warn({ msg: chunk.toString() }, "ffmpeg trim-url stderr");
+    });
+
+    ffmpeg.on("error", (err) => {
+      req.log.error({ err }, "ffmpeg trim-url spawn error");
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+
+    await new Promise<void>((resolve) => ffmpeg.on("close", resolve));
+  } catch (err) {
+    clearTimeout(timer);
+    const isAbort = (err as Error)?.name === "AbortError";
+    if (!res.headersSent) {
+      res.status(isAbort ? 504 : 502).json({ error: isAbort ? "Fetch timed out" : "Failed to fetch video" });
+    }
+  }
+});
+
 const ALLOWED_CDN_HOSTS = [
   "videos.pexels.com",
   "player.vimeo.com",

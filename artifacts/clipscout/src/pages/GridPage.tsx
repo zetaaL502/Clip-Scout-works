@@ -52,19 +52,12 @@ function parsePexelsVideoId(clipId: string): string | null {
   return match?.[1] ?? null;
 }
 
-const TRIM_VIDEO_ENDPOINT = '/api/trim-video';
+const TRIM_VIDEO_URL_ENDPOINT = '/api/trim-video-url';
 const GIPHY_DOWNLOAD_PROXY = '/api/video-download';
 
-async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
-  // GIFs go through the server proxy for passthrough
-  if (clip.source === 'giphy') {
-    const rawUrl = clip.media_url || null;
-    if (!rawUrl) return null;
-    return `${GIPHY_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
-  }
-
-  // Pexels: try to get the best quality URL from server details endpoint
-  if (clip.source === 'pexels' && isPexelsClipId(clip.id)) {
+async function resolvePexelsCdnUrl(clip: Clip): Promise<string | null> {
+  if (clip.source !== 'pexels') return null;
+  if (isPexelsClipId(clip.id)) {
     const videoId = parsePexelsVideoId(clip.id);
     if (videoId) {
       try {
@@ -75,7 +68,6 @@ async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
       }
     }
   }
-
   return clip.media_url || null;
 }
 
@@ -98,48 +90,44 @@ async function exportAllVideos(
     const filename = `${fileNumber}.${ext}`;
 
     try {
-      const mediaUrl = await resolveExportMediaUrl(clip);
-      if (!mediaUrl) throw new Error('No media URL');
-
-      // Step 1: Download the raw clip (browser can access CDN directly via CORS)
-      const dlController = new AbortController();
-      const dlTimeout = setTimeout(() => dlController.abort(), 60000);
-      let dlRes: Response;
-      try {
-        dlRes = await fetch(mediaUrl, { signal: dlController.signal });
-      } finally {
-        clearTimeout(dlTimeout);
-      }
-      if (!dlRes.ok) throw new Error(`HTTP ${dlRes.status}`);
-      const rawBlob = await dlRes.blob();
-
       let finalBlob: Blob;
 
       if (isGif) {
-        // GIFs are already proxied through the server — use as-is
-        finalBlob = rawBlob;
+        // GIFs: fetch via server proxy (handles CORS + passthrough)
+        const rawUrl = clip.media_url;
+        if (!rawUrl) throw new Error('No GIF URL');
+        const proxyUrl = `${GIPHY_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
+        const dlController = new AbortController();
+        const dlTimeout = setTimeout(() => dlController.abort(), 60000);
+        let dlRes: Response;
+        try {
+          dlRes = await fetch(proxyUrl, { signal: dlController.signal });
+        } finally {
+          clearTimeout(dlTimeout);
+        }
+        if (!dlRes.ok) throw new Error(`GIF proxy HTTP ${dlRes.status}`);
+        finalBlob = await dlRes.blob();
       } else {
-        // Step 2: POST the MP4 blob to /api/trim-video for server-side FFmpeg trimming
+        // Pexels: ask the server to fetch the CDN URL directly and trim via FFmpeg.
+        // This is much faster than browser-download → browser-upload → trim.
+        const cdnUrl = await resolvePexelsCdnUrl(clip);
+        if (!cdnUrl) throw new Error('No Pexels CDN URL');
+
         const trimController = new AbortController();
-        const trimTimeout = setTimeout(() => trimController.abort(), 60000);
+        const trimTimeout = setTimeout(() => trimController.abort(), 90000);
         let trimRes: Response;
         try {
-          trimRes = await fetch(TRIM_VIDEO_ENDPOINT, {
+          trimRes = await fetch(TRIM_VIDEO_URL_ENDPOINT, {
             method: 'POST',
-            headers: { 'Content-Type': 'video/mp4' },
-            body: rawBlob,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: cdnUrl }),
             signal: trimController.signal,
           });
         } finally {
           clearTimeout(trimTimeout);
         }
-        if (!trimRes.ok) {
-          // If trimming fails, fall back to the untrimmed blob
-          console.warn(`Trim failed for clip ${i + 1}, using raw video`);
-          finalBlob = rawBlob;
-        } else {
-          finalBlob = await trimRes.blob();
-        }
+        if (!trimRes.ok) throw new Error(`Trim-URL HTTP ${trimRes.status}`);
+        finalBlob = await trimRes.blob();
       }
 
       zip.file(`${folderName}/${filename}`, finalBlob, {

@@ -169,13 +169,16 @@ export function SegmentCard({
     try {
       let newClips: Clip[] = [];
       if (source === 'pexels') {
-        // Cycle through comma-separated keyword phrases so each click uses a fresh set
+        // Cycle through comma-separated keyword phrases so each click uses a fresh set.
+        // Once all phrases have been used once, increment the page so subsequent clicks
+        // fetch a new set of results instead of repeating the same clips.
         const cycles = pexelsKeywordCycles.current;
-        const keyword = cycles[pexelsKeywordIndexRef.current % cycles.length];
+        const idx = pexelsKeywordIndexRef.current;
+        const keyword = cycles[idx % cycles.length];
+        const page = Math.floor(idx / cycles.length) + 1;
         pexelsKeywordIndexRef.current += 1;
-        // Always fetch page 1 of the new keyword to get the best results for that phrase
         const broadSegment = { ...segment, pexels_keywords: keyword };
-        newClips = await fetchPexelsClips(broadSegment, 1);
+        newClips = await fetchPexelsClips(broadSegment, page);
       } else {
         const nextPage = giphyPage + 1;
         newClips = await fetchGiphyClips(segment, nextPage);
