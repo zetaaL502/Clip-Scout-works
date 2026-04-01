@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { spawn } from "node:child_process";
 
 const router: IRouter = Router();
 
@@ -170,8 +171,61 @@ router.get("/pexels-video/:videoId", async (req, res) => {
   }
 });
 
-// Proxies a video download through the server to avoid CORS restrictions.
-// Only allows CDN URLs from trusted video hosts (Pexels, Vimeo, etc.).
+const MAX_CLIP_SECONDS = 30;
+
+// Receives a raw MP4 video blob from the browser, trims it to MAX_CLIP_SECONDS
+// using FFmpeg (stream copy — no re-encode, very fast), and streams the result back.
+// The browser downloads the clip directly from the CDN (CORS is allowed), then sends
+// it here; we avoid any server-side CDN fetch restriction.
+router.post("/trim-video", (req, res) => {
+  res.setHeader("Content-Type", "video/mp4");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "no-store");
+
+  const ffmpeg = spawn("ffmpeg", [
+    "-loglevel", "error",
+    "-i", "pipe:0",                           // read uploaded video from stdin
+    "-t", String(MAX_CLIP_SECONDS),            // trim to 30 seconds max
+    "-c", "copy",                              // stream copy — no re-encoding
+    "-f", "mp4",
+    "-movflags", "frag_keyframe+empty_moov",  // fragmented MP4 (streamable)
+    "pipe:1",                                  // write trimmed video to stdout
+  ], { stdio: ["pipe", "pipe", "pipe"] });
+
+  // Pipe request body (uploaded video) → FFmpeg stdin
+  req.pipe(ffmpeg.stdin);
+
+  // Pipe FFmpeg stdout → HTTP response
+  ffmpeg.stdout.pipe(res);
+
+  ffmpeg.stderr.on("data", (chunk: Buffer) => {
+    req.log.warn({ msg: chunk.toString() }, "ffmpeg trim stderr");
+  });
+
+  ffmpeg.on("error", (err) => {
+    req.log.error({ err }, "ffmpeg trim spawn error");
+    if (!res.headersSent) res.status(500).end();
+    else res.end();
+  });
+
+  req.on("error", () => ffmpeg.stdin.destroy());
+});
+
+const ALLOWED_CDN_HOSTS = [
+  "videos.pexels.com",
+  "player.vimeo.com",
+  "vimeocdn.com",
+  "storage.googleapis.com",
+  "cdn.giphy.com",
+  "media.giphy.com",
+  "media0.giphy.com",
+  "media1.giphy.com",
+  "media2.giphy.com",
+  "media3.giphy.com",
+  "media4.giphy.com",
+];
+
+// Legacy proxy kept for GIF passthrough only — MP4s go through /trim-video instead.
 router.get("/video-download", async (req, res) => {
   const rawUrl = req.query["url"];
   if (typeof rawUrl !== "string" || !rawUrl) {
@@ -187,21 +241,7 @@ router.get("/video-download", async (req, res) => {
     return;
   }
 
-  // Allow only trusted video CDN hostnames
-  const allowedHosts = [
-    "videos.pexels.com",
-    "player.vimeo.com",
-    "vimeocdn.com",
-    "storage.googleapis.com",
-    "cdn.giphy.com",
-    "media.giphy.com",
-    "media0.giphy.com",
-    "media1.giphy.com",
-    "media2.giphy.com",
-    "media3.giphy.com",
-    "media4.giphy.com",
-  ];
-  const isAllowed = allowedHosts.some(
+  const isAllowed = ALLOWED_CDN_HOSTS.some(
     (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
   );
   if (!isAllowed) {
@@ -209,14 +249,24 @@ router.get("/video-download", async (req, res) => {
     return;
   }
 
+  // Determine if this is a GIF (Giphy) — skip FFmpeg trimming for GIFs
+  const isGif =
+    parsed.pathname.endsWith(".gif") ||
+    rawUrl.includes("giphy.com") ||
+    rawUrl.includes("giphy-media");
+
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
+    const timer = setTimeout(() => controller.abort(), 90000);
 
     const upstream = await fetch(rawUrl, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ClipScout/1.0)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://www.pexels.com/",
+        "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://www.pexels.com",
       },
     });
 
@@ -227,28 +277,86 @@ router.get("/video-download", async (req, res) => {
       return;
     }
 
-    const contentType = upstream.headers.get("content-type") ?? "video/mp4";
-    const contentLength = upstream.headers.get("content-length");
+    if (!upstream.body) {
+      res.status(502).json({ error: "Empty upstream body" });
+      return;
+    }
 
-    res.setHeader("Content-Type", contentType);
     res.setHeader("Access-Control-Allow-Origin", "*");
-    if (contentLength) res.setHeader("Content-Length", contentLength);
     res.setHeader("Cache-Control", "no-store");
 
-    if (upstream.body) {
+    if (isGif) {
+      // Stream GIFs through unchanged
+      const contentType = upstream.headers.get("content-type") ?? "image/gif";
+      const contentLength = upstream.headers.get("content-length");
+      res.setHeader("Content-Type", contentType);
+      if (contentLength) res.setHeader("Content-Length", contentLength);
+
       const reader = upstream.body.getReader();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         res.write(value);
       }
+      res.end();
+      return;
     }
 
-    res.end();
+    // MP4 — trim to MAX_CLIP_SECONDS seconds using FFmpeg (stream copy, no re-encode)
+    res.setHeader("Content-Type", "video/mp4");
+
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel", "error",
+      "-i", "pipe:0",                          // read source video from stdin
+      "-t", String(MAX_CLIP_SECONDS),           // trim to 30 seconds maximum
+      "-c", "copy",                             // stream copy — no re-encoding, very fast
+      "-f", "mp4",
+      "-movflags", "frag_keyframe+empty_moov", // fragmented MP4 — streamable without seeking
+      "pipe:1",                                 // write trimmed video to stdout
+    ], { stdio: ["pipe", "pipe", "pipe"] });
+
+    // Forward FFmpeg stdout → HTTP response
+    ffmpeg.stdout.pipe(res);
+
+    // Pump the upstream response body into FFmpeg stdin
+    const reader = upstream.body.getReader();
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            ffmpeg.stdin.end();
+            break;
+          }
+          if (!ffmpeg.stdin.write(value)) {
+            // Respect backpressure
+            await new Promise<void>((resolve) => ffmpeg.stdin.once("drain", resolve));
+          }
+        }
+      } catch {
+        ffmpeg.stdin.destroy();
+      }
+    })();
+
+    ffmpeg.stderr.on("data", (chunk: Buffer) => {
+      req.log.warn({ msg: chunk.toString() }, "ffmpeg stderr");
+    });
+
+    ffmpeg.on("error", (err) => {
+      req.log.error({ err }, "ffmpeg spawn error");
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+
+    // Wait for FFmpeg to finish before logging completion
+    await new Promise<void>((resolve) => ffmpeg.on("close", resolve));
+
   } catch (err) {
     const isAbort = (err as Error)?.name === "AbortError";
     if (!res.headersSent) {
-      res.status(isAbort ? 504 : 502).json({ error: isAbort ? "Download timed out" : "Download failed" });
+      res.status(isAbort ? 504 : 502).json({
+        error: isAbort ? "Download timed out" : "Download failed",
+      });
     }
   }
 });

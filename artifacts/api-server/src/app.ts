@@ -18,7 +18,7 @@ function rateLimiter(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   entry.count += 1;
-  if (entry.count > 60) {
+  if (entry.count > 200) {
     res.status(429).json({ error: "Too many requests. Please slow down." });
     return;
   }

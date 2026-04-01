@@ -52,29 +52,31 @@ function parsePexelsVideoId(clipId: string): string | null {
   return match?.[1] ?? null;
 }
 
-const VIDEO_DOWNLOAD_PROXY = '/api/video-download';
+const TRIM_VIDEO_ENDPOINT = '/api/trim-video';
+const GIPHY_DOWNLOAD_PROXY = '/api/video-download';
 
 async function resolveExportMediaUrl(clip: Clip): Promise<string | null> {
-  // First try to get the best quality URL from the server for Pexels clips
+  // GIFs go through the server proxy for passthrough
+  if (clip.source === 'giphy') {
+    const rawUrl = clip.media_url || null;
+    if (!rawUrl) return null;
+    return `${GIPHY_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
+  }
+
+  // Pexels: try to get the best quality URL from server details endpoint
   if (clip.source === 'pexels' && isPexelsClipId(clip.id)) {
     const videoId = parsePexelsVideoId(clip.id);
     if (videoId) {
       try {
         const bestUrl = await fetchBestPexelsExportUrl(videoId);
-        if (bestUrl) {
-          // Route through server proxy to avoid CORS
-          return `${VIDEO_DOWNLOAD_PROXY}?url=${encodeURIComponent(bestUrl)}`;
-        }
+        if (bestUrl) return bestUrl;
       } catch {
-        // Fall through to media_url
+        // Fall through to stored media_url
       }
     }
   }
 
-  const rawUrl = clip.media_url || null;
-  if (!rawUrl) return null;
-  // Route all media URLs through the server proxy to avoid CORS on CDN downloads
-  return `${VIDEO_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
+  return clip.media_url || null;
 }
 
 async function exportAllVideos(
@@ -91,24 +93,56 @@ async function exportAllVideos(
   for (let i = 0; i < total; i++) {
     const clip = videoDataArray[i];
     const fileNumber = String(i + 1).padStart(3, '0');
-    const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
+    const isGif = clip.source === 'giphy';
+    const ext = isGif ? 'gif' : 'mp4';
     const filename = `${fileNumber}.${ext}`;
 
     try {
       const mediaUrl = await resolveExportMediaUrl(clip);
       if (!mediaUrl) throw new Error('No media URL');
+
+      // Step 1: Download the raw clip (browser can access CDN directly via CORS)
       const dlController = new AbortController();
-      const dlTimeout = setTimeout(() => dlController.abort(), 45000);
-      let res: Response;
+      const dlTimeout = setTimeout(() => dlController.abort(), 60000);
+      let dlRes: Response;
       try {
-        res = await fetch(mediaUrl, { signal: dlController.signal });
+        dlRes = await fetch(mediaUrl, { signal: dlController.signal });
       } finally {
         clearTimeout(dlTimeout);
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
+      if (!dlRes.ok) throw new Error(`HTTP ${dlRes.status}`);
+      const rawBlob = await dlRes.blob();
 
-      zip.file(`${folderName}/${filename}`, blob, {
+      let finalBlob: Blob;
+
+      if (isGif) {
+        // GIFs are already proxied through the server — use as-is
+        finalBlob = rawBlob;
+      } else {
+        // Step 2: POST the MP4 blob to /api/trim-video for server-side FFmpeg trimming
+        const trimController = new AbortController();
+        const trimTimeout = setTimeout(() => trimController.abort(), 60000);
+        let trimRes: Response;
+        try {
+          trimRes = await fetch(TRIM_VIDEO_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'video/mp4' },
+            body: rawBlob,
+            signal: trimController.signal,
+          });
+        } finally {
+          clearTimeout(trimTimeout);
+        }
+        if (!trimRes.ok) {
+          // If trimming fails, fall back to the untrimmed blob
+          console.warn(`Trim failed for clip ${i + 1}, using raw video`);
+          finalBlob = rawBlob;
+        } else {
+          finalBlob = await trimRes.blob();
+        }
+      }
+
+      zip.file(`${folderName}/${filename}`, finalBlob, {
         date: new Date(baseTimestamp + i * EXPORT_FILE_TIME_STEP_MS),
       });
     } catch {
