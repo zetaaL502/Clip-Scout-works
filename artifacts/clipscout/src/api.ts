@@ -148,7 +148,7 @@ Instructions:
 - The segments, taken together, must reproduce the entire script with no words missing.
 
 For each segment generate:
-- "pexels_keywords": 3–5 specific visual words describing cinematic, landscape, nature, or action footage. Example: "busy city street night rain"
+- "pexels_keywords": 2–3 SIMPLE GENERIC words that stock footage websites commonly have. ALWAYS use broad visual concepts like "city skyline", "luxury apartment", "business meeting", "airport crowd", "private jet", "money cash", "desert road", "skyscraper", "sunset ocean", "people walking". NEVER use specific names, events, or niche concepts. Think: what generic footage would visually represent this scene?
 - "giphy_keywords": 2–3 words for a fun expressive GIF. Example: "mind blown"
 - "duration_estimate": estimated speaking time e.g. "~15 seconds"
 
@@ -168,6 +168,7 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script:
 ${script}`;
 
+
 // Makes a single Groq API call for one chunk of the script.
 async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
   const apiKey = storage.getGroqKey();
@@ -182,9 +183,10 @@ async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
+
         model: 'llama-3.3-70b-versatile',
         response_format: { type: 'json_object' },
-        max_tokens: 8000,
+        max_tokens: 6000,
         messages: [{ role: 'user', content: GROQ_PROMPT(scriptChunk) }],
       }),
       signal: controller.signal,
@@ -227,16 +229,15 @@ export async function analyzeScript(script: string): Promise<RawSegment[]> {
 
   // For long scripts, split into two halves and make two parallel Groq calls.
   // This avoids hitting the max_tokens output limit and getting a truncated response.
-  if (wordCount > 1200) {
+  if (wordCount > 400) {
     const splitAt = findSplitPoint(script);
     const firstHalf = script.slice(0, splitAt).trim();
     const secondHalf = script.slice(splitAt).trim();
 
     // Run both halves in parallel
-    const [firstSegs, secondSegs] = await Promise.all([
-      callGroq(firstHalf),
-      callGroq(secondHalf),
-    ]);
+    const firstSegs = await callGroq(firstHalf);
+    await new Promise(r => setTimeout(r, 10000));
+    const secondSegs = await callGroq(secondHalf);
 
     return [...firstSegs, ...secondSegs];
   }

@@ -46,7 +46,7 @@ router.post("/pexels-proxy", async (req, res) => {
   }
 
   try {
-    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=20&page=${page}`;
+    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=20&page=${page}&min_duration=5&max_duration=30`;
     const pexelsRes = await fetch(url, {
       headers: { Authorization: apiKey },
     });
