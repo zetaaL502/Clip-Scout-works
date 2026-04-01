@@ -17,7 +17,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
   const isLandscape = (width?: number, height?: number) =>
     typeof width === 'number' && typeof height === 'number' && width > height;
 
-  const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number }>) =>
+  const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number; duration?: number }>) =>
     data.slice(0, 4).map((item) => ({
     id: `pexels-${item.id}-${page}`,
     segmentId: segment.id,
@@ -26,6 +26,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
     media_url: item.media_url,
     width: item.width,
     height: item.height,
+    duration: item.duration,
     }));
 
   try {
@@ -79,6 +80,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
     videos: Array<{
       id: number;
       image: string;
+      duration?: number;
       width?: number;
       height?: number;
       video_files: Array<{ quality: string; link: string; file_type: string; width?: number; height?: number }>;
@@ -98,6 +100,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
       media_url: hdFile?.link ?? '',
       width: video.width,
       height: video.height,
+      duration: video.duration,
     };
   });
   return mapClips(normalized);

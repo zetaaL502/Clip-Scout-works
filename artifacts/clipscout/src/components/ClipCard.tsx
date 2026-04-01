@@ -153,6 +153,13 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
         </div>
       </button>
 
+      {/* Duration badge (Pexels only) */}
+      {!isGif && typeof clip.duration === 'number' && (
+        <div className="absolute top-1.5 left-1.5 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded font-medium pointer-events-none">
+          {clip.duration}s
+        </div>
+      )}
+
       {/* GIF label */}
       {isGif && (
         <div className="absolute bottom-7 left-1.5 text-xs bg-black/60 text-white px-1.5 py-0.5 rounded font-medium pointer-events-none">

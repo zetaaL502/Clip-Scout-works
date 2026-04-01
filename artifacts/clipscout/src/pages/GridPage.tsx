@@ -439,18 +439,21 @@ export function GridPage({ onBack, onSettings }: Props) {
       });
     });
 
-    // Sort selections by segment order (segment index, then clip index within segment)
-    // so the zip always exports 001, 002, 003... in script order regardless of click order.
-    const sortedSelections = [...selections].sort((a, b) => {
-      const partsA = a.split('_');
-      const partsB = b.split('_');
-      const segA = parseInt(partsA[1] ?? '0', 10);
-      const segB = parseInt(partsB[1] ?? '0', 10);
-      if (segA !== segB) return segA - segB;
-      const clipA = parseInt(partsA[3] ?? '0', 10);
-      const clipB = parseInt(partsB[3] ?? '0', 10);
-      return clipA - clipB;
-    });
+    // Sort selections so the zip always exports 001, 002, 003... in script segment order.
+    // Across segments: sort by segment index (1 before 2 before 3...).
+    // Within the same segment: preserve the order the user clicked/selected them.
+    const sortedSelections = selections
+      .map((key, idx) => ({ key, idx }))
+      .sort((a, b) => {
+        const partsA = a.key.split('_');
+        const partsB = b.key.split('_');
+        const segA = parseInt(partsA[1] ?? '0', 10);
+        const segB = parseInt(partsB[1] ?? '0', 10);
+        if (segA !== segB) return segA - segB;
+        // Same segment — preserve selection/click order via original array index
+        return a.idx - b.idx;
+      })
+      .map(({ key }) => key);
 
     // Build ordered clip list from sorted selections
     const selectedClips: Clip[] = [];

@@ -77,6 +77,7 @@ router.post("/pexels-proxy", async (req, res) => {
       videos: Array<{
         id: number;
         image: string;
+        duration?: number;
         width?: number;
         height?: number;
         video_files: Array<{ quality: string; link: string; file_type: string; width?: number; height?: number }>;
@@ -97,6 +98,7 @@ router.post("/pexels-proxy", async (req, res) => {
           media_url: hdFile?.link ?? "",
           width: video.width,
           height: video.height,
+          duration: video.duration,
         };
       })
       .slice(0, 4);
