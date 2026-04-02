@@ -1,0 +1,134 @@
+
+
+vibrant-presence
+
+production
+
+
+22
+
+28 days or $5.00 left
+
+
+Agent
+
+Apply 1 change
+
+
+Details
+
+Deploy ⇧+Enter
+
+
+Clip-Scout-works
+Deployments
+Variables
+Metrics
+Settings
+clip-scout-works-production.up.railway.app
+asia-southeast1-eqsg3a
+1 Replica
+
+
+
+
+History
+
+Clip-Scout-works
+/
+f8025c4d
+Failed
+
+Apr 2, 2026, 6:13 PM GMT+5:45
+clip-scout-works-production.up.railway.app
+Get Help
+Details
+Build Logs
+Deploy Logs
+HTTP Logs
+Network Flow Logs
+Search build logs
+
+You reached the start of the range
+Apr 2, 2026, 6:08 PM
+ 
+[Region: asia-southeast1]
+==============
+Using Nixpacks
+==============
+
+context: 729k-JRc1
+╔══════════════════════════════ Nixpacks v1.38.0 ══════════════════════════════╗
+║ setup      │ nodejs_20, ffmpeg                                               ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ install    │ npm install -g pnpm@10.26.1                                     ║
+║            │ pnpm install --no-frozen-lockfile                               ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ build      │ npm install -g pnpm@10.26.1 && pnpm install --no-frozen-        ║
+║            │ lockfile                                                        ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ start      │ node --enable-source-maps ./artifacts/api-server/dist/index.mjs ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+internal
+load build definition from Dockerfile
+0ms
+
+internal
+load metadata for ghcr.io/railwayapp/nixpacks:ubuntu-1745885067
+570ms
+
+internal
+load .dockerignore
+0ms
+
+stage-0
+FROM ghcr.io/railwayapp/nixpacks:ubuntu-1745885067@sha256:d45c89d80e13d7ad0fd555b5130f22a866d9dd10e861f589932303ef2314c7de
+8ms
+
+internal
+load build context
+0ms
+
+stage-0
+WORKDIR /app/ cached
+0ms
+
+stage-0
+COPY .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix
+107ms
+
+stage-0
+RUN nix-env -if .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix && nix-collect-garbage -d
+42s
+20 store paths deleted, 230.77 MiB freed
+
+stage-0
+COPY . /app/.
+306ms
+
+stage-0
+RUN pnpm install --no-frozen-lockfile
+130ms
+/bin/bash: line 1: pnpm: command not found
+Dockerfile:21
+-------------------
+19 |     COPY . /app/.
+22 |
+23 |     # build phase
+-------------------
+Error: Docker build failed
+You reached the end of the range
+Apr 2, 2026, 6:19 PM
+
+
+New Agent
+
+Apply 1 change
+
+
+Details
+
+Deploy
+You're out of tokens
+Upgrade to Pro for 4x more

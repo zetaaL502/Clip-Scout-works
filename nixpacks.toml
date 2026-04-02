@@ -2,7 +2,4 @@
 nixPkgs = ["nodejs_20", "ffmpeg"]
 
 [phases.install]
-cmds = ["npm install -g pnpm@10.26.1", "pnpm install --no-frozen-lockfile"]
-
-[phases.build]
-cmds = []
+cmds = ["npm install -g pnpm@10.26.1 && pnpm install --no-frozen-lockfile"]
