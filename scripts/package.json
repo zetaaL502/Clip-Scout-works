@@ -9,6 +9,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
-    "tsx": "catalog:"
+    "tsx": "^4.21.0"
   }
 }
