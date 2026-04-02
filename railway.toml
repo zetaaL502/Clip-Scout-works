@@ -1,6 +1,5 @@
 [build]
-installCommand = "echo 'no install needed'"
-buildCommand = "echo 'using pre-built dist'"
+builder = "DOCKERFILE"
 
 [deploy]
 startCommand = "node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
