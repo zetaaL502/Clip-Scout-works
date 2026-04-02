@@ -1,5 +1,5 @@
 [build]
-builder = "DOCKERFILE"
+buildCommand = "npm install -g pnpm@10.26.1 && pnpm install --frozen-lockfile && pnpm --filter @workspace/clipscout run build && pnpm --filter @workspace/api-server run build"
 
 [deploy]
 startCommand = "node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
