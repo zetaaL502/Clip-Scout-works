@@ -1,0 +1,136 @@
+
+
+vibrant-presence
+
+production
+
+
+19
+
+29 days or $5.00 left
+
+
+Agent
+
+
+Clip-Scout-works
+Deployments
+Variables
+Metrics
+Settings
+clip-scout-works-production.up.railway.app
+asia-southeast1-eqsg3a
+1 Replica
+
+
+
+
+History
+
+Clip-Scout-works
+/
+62870aa3
+Active
+
+Apr 2, 2026, 5:48 PM GMT+5:45
+clip-scout-works-production.up.railway.app
+Details
+Build Logs
+Deploy Logs
+HTTP Logs
+Network Flow Logs
+Search build logs
+
+You reached the start of the range
+Apr 2, 2026, 5:43 PM
+ 
+[Region: asia-southeast1]
+=========================
+Using Detected Dockerfile
+=========================
+
+context: 165f-AVXa
+
+internal
+load build definition from Dockerfile
+0ms
+
+internal
+load metadata for docker.io/library/node:20-slim
+1s
+
+auth
+library/node:pull token for registry-1.docker.io
+0ms
+
+internal
+load .dockerignore
+0ms
+
+base
+FROM docker.io/library/node:20-slim@sha256:1e85773c98c31d4fe5b545e4cb17379e617b348832fb3738b22a08f68dec30f3
+5ms
+
+internal
+load build context
+0ms
+
+runner
+COPY --from=base /app/node_modules ./node_modules cached
+0ms
+
+runner
+COPY --from=base /app/artifacts/api-server/dist ./artifacts/api-server/dist cached
+0ms
+
+base
+RUN pnpm --filter @workspace/api-server run build cached
+0ms
+
+base
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server... cached
+0ms
+
+base
+COPY artifacts/api-server/ ./artifacts/api-server/ cached
+0ms
+
+base
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./ cached
+0ms
+
+base
+WORKDIR /app cached
+0ms
+
+base
+RUN npm install -g pnpm@10.26.1 cached
+0ms
+
+runner
+WORKDIR /app cached
+0ms
+
+runner
+COPY --from=base /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules cached
+0ms
+
+base
+COPY lib/ ./lib/ cached
+0ms
+
+auth
+sharing credentials for production-asia-southeast1-eqsg3a.railway-registry.com
+0ms
+
+importing to docker
+2s
+Build time: 6.39 seconds
+You reached the end of the range
+Apr 2, 2026, 5:54 PM
+
+
+New Agent
+
+You're out of tokens
+Upgrade to Pro for 4x more
