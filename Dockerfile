@@ -1,5 +1,7 @@
 FROM node:20-slim AS base
 
+RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g pnpm@10.26.1
 
 WORKDIR /app
@@ -17,6 +19,8 @@ RUN pnpm --filter @workspace/api-server run build
 
 FROM node:20-slim AS runner
 
+RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=base /app/artifacts/api-server/dist ./artifacts/api-server/dist
@@ -25,7 +29,6 @@ COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
 
 ENV NODE_ENV=production
-ENV PORT=8080
 
 EXPOSE 8080
 
