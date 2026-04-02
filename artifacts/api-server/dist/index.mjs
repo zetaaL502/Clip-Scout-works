@@ -101931,6 +101931,7 @@ var import_express4 = __toESM(require_express2(), 1);
 var import_archiver = __toESM(require_archiver(), 1);
 var import_qrcode = __toESM(require_lib5(), 1);
 import { randomUUID as randomUUID2 } from "node:crypto";
+import { spawn as spawn2 } from "node:child_process";
 import fs3 from "node:fs";
 import fsp from "node:fs/promises";
 import path2 from "node:path";
@@ -101939,6 +101940,8 @@ import http3 from "node:http";
 var router4 = (0, import_express4.Router)();
 var EXPORTS_DIR = "/tmp/exports";
 var AUTO_DELETE_MS = 60 * 60 * 1e3;
+var MAX_CLIP_SECONDS2 = 30;
+var ZIP_FOLDER_NAME = "youtube_export";
 var jobs = /* @__PURE__ */ new Map();
 var zipFiles = /* @__PURE__ */ new Map();
 fsp.mkdir(EXPORTS_DIR, { recursive: true }).catch(() => {
@@ -102013,12 +102016,17 @@ router4.get("/download/:zipId", (req, res) => {
 function downloadFile2(url, dest) {
   return new Promise((resolve, reject) => {
     const file = fs3.createWriteStream(dest);
-    function fetch3(targetUrl) {
+    function fetchUrl(targetUrl) {
       const protocol = targetUrl.startsWith("https") ? https2 : http3;
-      protocol.get(targetUrl, (response) => {
+      protocol.get(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Referer": "https://www.pexels.com/",
+          "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9"
+        }
+      }, (response) => {
         if ((response.statusCode === 301 || response.statusCode === 302) && response.headers.location) {
-          file.close();
-          fetch3(response.headers.location);
+          fetchUrl(response.headers.location);
           return;
         }
         response.pipe(file);
@@ -102034,7 +102042,34 @@ function downloadFile2(url, dest) {
         reject(err);
       });
     }
-    fetch3(url);
+    fetchUrl(url);
+  });
+}
+function fixVideoMetadata(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn2("ffmpeg", [
+      "-loglevel",
+      "error",
+      "-i",
+      inputPath,
+      "-t",
+      String(MAX_CLIP_SECONDS2),
+      "-c",
+      "copy",
+      "-movflags",
+      "+faststart",
+      outputPath
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const stderrChunks = [];
+    ffmpeg.stderr.on("data", (chunk) => stderrChunks.push(chunk.toString()));
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}: ${stderrChunks.join("")}`));
+      }
+    });
   });
 }
 async function processExport(jobId, urls, origin) {
@@ -102045,10 +102080,18 @@ async function processExport(jobId, urls, origin) {
   await fsp.mkdir(jobDir, { recursive: true });
   for (let i2 = 0; i2 < urls.length; i2++) {
     const filename = String(i2 + 1).padStart(3, "0") + ".mp4";
-    const destPath = path2.join(jobDir, filename);
+    const rawPath = path2.join(jobDir, `${filename}.raw`);
+    const finalPath = path2.join(jobDir, filename);
     try {
-      await downloadFile2(urls[i2], destPath);
+      await downloadFile2(urls[i2], rawPath);
+      await fixVideoMetadata(rawPath, finalPath);
+      await fsp.unlink(rawPath).catch(() => {
+      });
     } catch {
+      await fsp.unlink(rawPath).catch(() => {
+      });
+      await fsp.unlink(finalPath).catch(() => {
+      });
     }
     job.current = i2 + 1;
   }
@@ -102062,7 +102105,7 @@ async function processExport(jobId, urls, origin) {
     output.on("close", resolve);
     archive.on("error", reject);
     archive.pipe(output);
-    archive.directory(jobDir, false);
+    archive.directory(jobDir, ZIP_FOLDER_NAME);
     archive.finalize();
   });
   await fsp.rm(jobDir, { recursive: true, force: true });

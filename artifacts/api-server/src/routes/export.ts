@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import archiver from "archiver";
 import QRCode from "qrcode";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +13,8 @@ const router = Router();
 
 const EXPORTS_DIR = "/tmp/exports";
 const AUTO_DELETE_MS = 60 * 60 * 1000;
+const MAX_CLIP_SECONDS = 30;
+const ZIP_FOLDER_NAME = "youtube_export"; // must match the computer export folder name
 
 type JobStatus = "processing" | "done" | "error";
 
@@ -112,20 +115,27 @@ router.get("/download/:zipId", (req: Request, res: Response) => {
   fs.createReadStream(entry.filePath).pipe(res);
 });
 
+// Download a URL to a file path, following redirects.
 function downloadFile(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
 
-    function fetch(targetUrl: string) {
+    function fetchUrl(targetUrl: string) {
       const protocol = targetUrl.startsWith("https") ? https : http;
       protocol
-        .get(targetUrl, (response) => {
+        .get(targetUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://www.pexels.com/",
+            "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9",
+          },
+        }, (response) => {
           if (
             (response.statusCode === 301 || response.statusCode === 302) &&
             response.headers.location
           ) {
-            file.close();
-            fetch(response.headers.location);
+            // redirect — don't write to file yet, follow the redirect
+            fetchUrl(response.headers.location);
             return;
           }
           response.pipe(file);
@@ -141,7 +151,35 @@ function downloadFile(url: string, dest: string): Promise<void> {
         });
     }
 
-    fetch(url);
+    fetchUrl(url);
+  });
+}
+
+// Run FFmpeg on an already-downloaded file to fix MP4 metadata.
+// Identical fix to /trim-video-url: outputs to a real file with +faststart
+// so editing apps (VN, CapCut, etc.) see the correct duration.
+function fixVideoMetadata(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel", "error",
+      "-i", inputPath,
+      "-t", String(MAX_CLIP_SECONDS),
+      "-c", "copy",
+      "-movflags", "+faststart",
+      outputPath,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+
+    const stderrChunks: string[] = [];
+    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}: ${stderrChunks.join("")}`));
+      }
+    });
   });
 }
 
@@ -156,12 +194,26 @@ async function processExport(jobId: string, urls: string[], origin: string): Pro
 
   for (let i = 0; i < urls.length; i++) {
     const filename = String(i + 1).padStart(3, "0") + ".mp4";
-    const destPath = path.join(jobDir, filename);
+    const rawPath = path.join(jobDir, `${filename}.raw`);
+    const finalPath = path.join(jobDir, filename);
+
     try {
-      await downloadFile(urls[i], destPath);
+      // Step 1: Download the raw file
+      await downloadFile(urls[i], rawPath);
+
+      // Step 2: Run FFmpeg to fix moov atom / duration metadata — identical to
+      // what /trim-video-url does for the computer export. Without this, VN and
+      // other mobile editors show 0s or 0.5s duration on Pexels clips.
+      await fixVideoMetadata(rawPath, finalPath);
+
+      // Step 3: Remove the raw file — only the fixed file goes into the ZIP
+      await fsp.unlink(rawPath).catch(() => {});
     } catch {
-      // skip failed clips, continue with the rest
+      // Clean up any partial files and skip this clip
+      await fsp.unlink(rawPath).catch(() => {});
+      await fsp.unlink(finalPath).catch(() => {});
     }
+
     job.current = i + 1;
   }
 
@@ -176,7 +228,9 @@ async function processExport(jobId: string, urls: string[], origin: string): Pro
     output.on("close", resolve);
     archive.on("error", reject);
     archive.pipe(output);
-    archive.directory(jobDir, false);
+    // Use ZIP_FOLDER_NAME as the folder inside the ZIP — matches the computer export exactly:
+    // computer export produces youtube_export/001.mp4, youtube_export/002.mp4, etc.
+    archive.directory(jobDir, ZIP_FOLDER_NAME);
     archive.finalize();
   });
 
