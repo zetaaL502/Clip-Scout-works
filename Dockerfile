@@ -7,8 +7,11 @@ WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY lib/ ./lib/
 COPY artifacts/api-server/ ./artifacts/api-server/
+COPY artifacts/clipscout/ ./artifacts/clipscout/
 
-RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server... --filter @workspace/clipscout...
+
+RUN pnpm --filter @workspace/clipscout run build
 
 RUN pnpm --filter @workspace/api-server run build
 
@@ -17,6 +20,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 COPY --from=base /app/artifacts/api-server/dist ./artifacts/api-server/dist
+COPY --from=base /app/artifacts/clipscout/dist ./artifacts/clipscout/dist
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
 
