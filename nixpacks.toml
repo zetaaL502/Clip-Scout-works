@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_22", "ffmpeg"]
 
 [phases.install]
-cmds = ["npm install -g pnpm@10.26.1 && pnpm install --no-frozen-lockfile"]
+cmds = ["COREPACK_INTEGRITY_KEYS=0 corepack enable && pnpm install --no-frozen-lockfile"]
 
 [phases.build]
 cmds = ["pnpm run build"]
