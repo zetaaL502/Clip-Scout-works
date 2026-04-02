@@ -82,64 +82,74 @@ async function exportAllVideos(
   const zip = new JSZip();
   const folderName = 'youtube_export';
 
-  for (let i = 0; i < total; i++) {
-    const clip = videoDataArray[i];
-    const fileNumber = String(i + 1).padStart(3, '0');
-    const isGif = clip.source === 'giphy';
-    const ext = isGif ? 'gif' : 'mp4';
-    const filename = `${fileNumber}.${ext}`;
+  // Download all clips in parallel — each clip starts immediately without waiting
+  // for others, so total export time ≈ slowest single clip instead of sum of all clips.
+  const results = await Promise.all(
+    videoDataArray.map(async (clip, i) => {
+      const fileNumber = String(i + 1).padStart(3, '0');
+      const isGif = clip.source === 'giphy';
+      const ext = isGif ? 'gif' : 'mp4';
+      const filename = `${fileNumber}.${ext}`;
 
-    try {
-      let finalBlob: Blob;
+      try {
+        let finalBlob: Blob;
 
-      if (isGif) {
-        // GIFs: fetch via server proxy (handles CORS + passthrough)
-        const rawUrl = clip.media_url;
-        if (!rawUrl) throw new Error('No GIF URL');
-        const proxyUrl = `${GIPHY_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
-        const dlController = new AbortController();
-        const dlTimeout = setTimeout(() => dlController.abort(), 60000);
-        let dlRes: Response;
-        try {
-          dlRes = await fetch(proxyUrl, { signal: dlController.signal });
-        } finally {
-          clearTimeout(dlTimeout);
+        if (isGif) {
+          const rawUrl = clip.media_url;
+          if (!rawUrl) throw new Error('No GIF URL');
+          const proxyUrl = `${GIPHY_DOWNLOAD_PROXY}?url=${encodeURIComponent(rawUrl)}`;
+          const dlController = new AbortController();
+          const dlTimeout = setTimeout(() => dlController.abort(), 60000);
+          let dlRes: Response;
+          try {
+            dlRes = await fetch(proxyUrl, { signal: dlController.signal });
+          } finally {
+            clearTimeout(dlTimeout);
+          }
+          if (!dlRes.ok) throw new Error(`GIF proxy HTTP ${dlRes.status}`);
+          finalBlob = await dlRes.blob();
+        } else {
+          // Pexels: server fetches CDN URL, runs FFmpeg to fix duration metadata,
+          // and returns the corrected MP4.
+          const cdnUrl = await resolvePexelsCdnUrl(clip);
+          if (!cdnUrl) throw new Error('No Pexels CDN URL');
+
+          const trimController = new AbortController();
+          const trimTimeout = setTimeout(() => trimController.abort(), 90000);
+          let trimRes: Response;
+          try {
+            trimRes = await fetch(TRIM_VIDEO_URL_ENDPOINT, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: cdnUrl }),
+              signal: trimController.signal,
+            });
+          } finally {
+            clearTimeout(trimTimeout);
+          }
+          if (!trimRes.ok) throw new Error(`Trim-URL HTTP ${trimRes.status}`);
+          finalBlob = await trimRes.blob();
         }
-        if (!dlRes.ok) throw new Error(`GIF proxy HTTP ${dlRes.status}`);
-        finalBlob = await dlRes.blob();
-      } else {
-        // Pexels: ask the server to fetch the CDN URL directly and trim via FFmpeg.
-        // This is much faster than browser-download → browser-upload → trim.
-        const cdnUrl = await resolvePexelsCdnUrl(clip);
-        if (!cdnUrl) throw new Error('No Pexels CDN URL');
 
-        const trimController = new AbortController();
-        const trimTimeout = setTimeout(() => trimController.abort(), 90000);
-        let trimRes: Response;
-        try {
-          trimRes = await fetch(TRIM_VIDEO_URL_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: cdnUrl }),
-            signal: trimController.signal,
-          });
-        } finally {
-          clearTimeout(trimTimeout);
-        }
-        if (!trimRes.ok) throw new Error(`Trim-URL HTTP ${trimRes.status}`);
-        finalBlob = await trimRes.blob();
+        processed += 1;
+        onProgress(processed, total);
+        return { filename, blob: finalBlob, index: i };
+      } catch {
+        addToast('error', `Clip ${i + 1} failed to download, skipped.`);
+        processed += 1;
+        onProgress(processed, total);
+        return null;
       }
+    })
+  );
 
-      zip.file(`${folderName}/${filename}`, finalBlob, {
-        date: new Date(baseTimestamp + i * EXPORT_FILE_TIME_STEP_MS),
-      });
-    } catch {
-      addToast('error', `Clip ${i + 1} failed to download, skipped.`);
-    }
-
-    processed += 1;
-    onProgress(processed, total);
-  }
+  // Add to ZIP in original order
+  results.forEach((result) => {
+    if (!result) return;
+    zip.file(`${folderName}/${result.filename}`, result.blob, {
+      date: new Date(baseTimestamp + result.index * EXPORT_FILE_TIME_STEP_MS),
+    });
+  });
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   downloadZipBlob(zipBlob, `${folderName}.zip`);
