@@ -25,7 +25,7 @@ export interface Project {
   fullScript: string;
 }
 
-export type Page = 'home' | 'grid' | 'settings';
+export type Page = 'home' | 'grid' | 'settings' | 'quicksend';
 
 export interface ToastItem {
   id: string;

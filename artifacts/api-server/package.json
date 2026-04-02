@@ -10,12 +10,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@types/multer": "^2.1.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/integrations-gemini-ai": "workspace:*",
     "archiver": "^7.0.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "express": "^5",
+    "multer": "^2.1.1",
     "pino": "^9",
     "pino-http": "^10",
     "qrcode": "^1.5.4"

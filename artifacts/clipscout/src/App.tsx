@@ -5,6 +5,8 @@ import { ToastContainer } from './components/Toast';
 import { SettingsPage } from './pages/SettingsPage';
 import { HomePage } from './pages/HomePage';
 import { GridPage } from './pages/GridPage';
+import { QuickSendPage } from './pages/QuickSendPage';
+import { AppSidebar } from './components/AppSidebar';
 import { storage } from './storage';
 import type { Page } from './types';
 
@@ -44,20 +46,24 @@ function AppContent() {
   }
 
   return (
-    <>
-      {page === 'home' && (
-        <HomePage
-          onAnalyzed={() => setPage('grid')}
-          onSettings={() => setShowSettings(true)}
-        />
-      )}
-      {page === 'grid' && (
-        <GridPage
-          onBack={() => setPage('home')}
-          onSettings={() => setShowSettings(true)}
-        />
-      )}
-    </>
+    <div className="flex">
+      <AppSidebar currentPage={page} onNavigate={(p) => { setPage(p); }} />
+      <div className="flex-1 pl-14 sm:pl-48 min-w-0">
+        {page === 'home' && (
+          <HomePage
+            onAnalyzed={() => setPage('grid')}
+            onSettings={() => setShowSettings(true)}
+          />
+        )}
+        {page === 'grid' && (
+          <GridPage
+            onBack={() => setPage('home')}
+            onSettings={() => setShowSettings(true)}
+          />
+        )}
+        {page === 'quicksend' && <QuickSendPage />}
+      </div>
+    </div>
   );
 }
 
