@@ -1,0 +1,114 @@
+
+
+vibrant-presence
+
+production
+
+
+24
+
+28 days or $5.00 left
+
+
+Agent
+
+
+Clip-Scout-works
+Deployments
+Variables
+Metrics
+Settings
+clip-scout-works-production.up.railway.app
+asia-southeast1-eqsg3a
+1 Replica
+
+
+
+
+History
+
+Clip-Scout-works
+/
+8bec6596
+Failed
+
+Apr 2, 2026, 6:18 PM GMT+5:45
+clip-scout-works-production.up.railway.app
+Get Help
+Details
+Build Logs
+Deploy Logs
+HTTP Logs
+Network Flow Logs
+Search build logs
+
+You reached the start of the range
+Apr 2, 2026, 6:13 PM
+ 
+[Region: asia-southeast1]
+==============
+Using Nixpacks
+==============
+
+context: bqwv-Wa_i
+╔══════════════════════════════ Nixpacks v1.38.0 ══════════════════════════════╗
+║ setup      │ nodejs_20, ffmpeg                                               ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ install    │ npm install -g pnpm@10.26.1 && pnpm install --no-frozen-        ║
+║            │ lockfile                                                        ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ build      │ pnpm run build                                                  ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ start      │ node --enable-source-maps ./artifacts/api-server/dist/index.mjs ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+internal
+load build definition from Dockerfile
+0ms
+
+internal
+load metadata for ghcr.io/railwayapp/nixpacks:ubuntu-1745885067
+559ms
+
+internal
+load .dockerignore
+0ms
+
+stage-0
+FROM ghcr.io/railwayapp/nixpacks:ubuntu-1745885067@sha256:d45c89d80e13d7ad0fd555b5130f22a866d9dd10e861f589932303ef2314c7de
+7ms
+
+internal
+load build context
+0ms
+
+stage-0
+WORKDIR /app/ cached
+0ms
+
+stage-0
+COPY .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix
+40ms
+
+stage-0
+RUN nix-env -if .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix && nix-collect-garbage -d
+37s
+20 store paths deleted, 230.77 MiB freed
+
+stage-0
+COPY . /app/.
+247ms
+-------------------
+18 |     ENV NIXPACKS_PATH=/app/node_modules/.bin:$NIXPACKS_PATH
+19 |     COPY . /app/.
+20 | >>> RUN --mount=type=cache,id=s/618283a4-8447-4ed2-9278-19fb5df7d3bd-/root/local/share/pnpm/store/v3,target=/root/.local/share/pnpm/store/v3 npm install -g pnpm@10.26.1 && pnpm install --no-frozen-lockfile
+21 |
+22 |     # build phase
+-------------------
+Error: Docker build failed
+
+
+New Agent
+
+You're out of tokens
+Upgrade to Pro for 4x more
