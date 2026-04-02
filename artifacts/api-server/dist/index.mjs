@@ -72171,7 +72171,7 @@ app.use(import_express5.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
 var frontendDist = path2.resolve(__dirname2, "../../clipscout/dist/public");
 app.use(import_express5.default.static(frontendDist));
-app.get("*", (_req, res) => {
+app.get("/{*path}", (_req, res) => {
   res.sendFile(path2.join(frontendDist, "index.html"));
 });
 var app_default = app;
