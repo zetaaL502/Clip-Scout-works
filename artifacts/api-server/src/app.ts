@@ -80,7 +80,7 @@ const frontendDist = path.resolve(__dirname, "../../clipscout/dist/public");
 app.use(express.static(frontendDist));
 
 // --- Catch-all: serve index.html for client-side routing ---
-app.get("/{*path}", (_req: Request, res: Response) => {
+app.get(/.*/, (_req: Request, res: Response) => {
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
