@@ -1,0 +1,165 @@
+
+
+vibrant-presence
+
+production
+
+
+23
+
+28 days or $5.00 left
+
+
+Agent
+
+
+Clip-Scout-works
+Deployments
+Variables
+Metrics
+Settings
+clip-scout-works-production.up.railway.app
+asia-southeast1-eqsg3a
+1 Replica
+
+
+
+
+History
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Clip-Scout-works
+/
+6f8a43d3
+Failed
+
+Apr 2, 2026, 6:21 PM GMT+5:45
+clip-scout-works-production.up.railway.app
+Get Help
+Details
+Build Logs
+Deploy Logs
+HTTP Logs
+Network Flow Logs
+Search build logs
+
+You reached the start of the range
+Apr 2, 2026, 6:16 PM
+ 
+[Region: asia-southeast1]
+==============
+Using Nixpacks
+==============
+
+context: 0n2p-NsGe
+╔══════════════════════════════ Nixpacks v1.38.0 ══════════════════════════════╗
+║ setup      │ nodejs_20, ffmpeg                                               ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ install    │ corepack enable && pnpm install --no-frozen-lockfile            ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ build      │ pnpm run build                                                  ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ start      │ node --enable-source-maps ./artifacts/api-server/dist/index.mjs ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+internal
+load build definition from Dockerfile
+0ms
+
+internal
+load metadata for ghcr.io/railwayapp/nixpacks:ubuntu-1745885067
+535ms
+
+internal
+load .dockerignore
+0ms
+
+stage-0
+FROM ghcr.io/railwayapp/nixpacks:ubuntu-1745885067@sha256:d45c89d80e13d7ad0fd555b5130f22a866d9dd10e861f589932303ef2314c7de
+7ms
+
+internal
+load build context
+0ms
+
+stage-0
+WORKDIR /app/ cached
+0ms
+
+stage-0
+COPY .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix
+11ms
+
+stage-0
+RUN nix-env -if .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix && nix-collect-garbage -d
+37s
+20 store paths deleted, 230.77 MiB freed
+
+stage-0
+COPY . /app/.
+213ms
+
+stage-0
+RUN corepack enable && pnpm install --no-frozen-lockfile
+367ms
+/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:21535
+  if (key == null || signature == null) throw new Error(`Cannot find matching keyid: ${JSON.stringify({ signatures, keys })}`);
+                                              ^
+Error: Cannot find matching keyid: {"signatures":[{"sig":"MEQCIGpg1fZb0EUD3mM2atIeFMzY6fzHtxkwAMVATTuXBj4hAiA0pWFq7jnX9QCWQhs8G2GYHt9VtWxKnJtJxTIumzFfpA==","keyid":"SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"}],"keys":[{"expires":null,"keyid":"SHA256:jl3bwswu80PjjokCgh0o2w5c2U4LhQAE57gj9cz1kzA","keytype":"ecdsa-sha2-nistp256","scheme":"ecdsa-sha2-nistp256","key":"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE1Olb3zMAFFxXKHiIkQO5cJ3Yhl5i6UPp+IhuteBJbuHcA5UogKo0EWtlWwW6KSaKoTNEYL7JlCQiVnkhBktUgg=="}]}
+
+    at verifySignature (/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:21535:47)
+    at fetchLatestStableVersion (/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:21553:5)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async fetchLatestStableVersion2 (/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:21672:14)
+    at async Engine.getDefaultVersion (/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:22292:23)
+    at async Engine.executePackageManagerRequest (/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:22390:47)
+    at async Object.runMain (/nix/store/j7dx1n6m5axf9r2bvly580x2ixx546wq-nodejs-20.18.1/lib/node_modules/corepack/dist/lib/corepack.cjs:23096:5)
+Node.js v20.18.1
+Dockerfile:20
+-------------------
+18 |     ENV NIXPACKS_PATH=/app/node_modules/.bin:$NIXPACKS_PATH
+19 |     COPY . /app/.
+20 | >>> RUN --mount=type=cache,id=s/618283a4-8447-4ed2-9278-19fb5df7d3bd-/root/local/share/pnpm/store/v3,target=/root/.local/share/pnpm/store/v3 corepack enable && pnpm install --no-frozen-lockfile
+21 |
+22 |     # build phase
+-------------------
+ERROR: failed to build: failed to solve: process "/bin/bash -ol pipefail -c corepack enable && pnpm install --no-frozen-lockfile" did not complete successfully: exit code: 1
+Error: Docker build failed
+You reached the end of the range
+Apr 2, 2026, 6:27 PM
+
+
+New Agent
+
+You're out of tokens
+Upgrade to Pro for 4x more
