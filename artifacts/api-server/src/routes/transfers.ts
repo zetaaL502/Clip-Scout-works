@@ -77,7 +77,10 @@ router.post("/transfers/upload", upload.array("files", 20), async (req: Request,
 
       await new Promise<void>((resolve, reject) => {
         const output = fs.createWriteStream(finalPath);
-        const archive = archiver("zip", { zlib: { level: 6 } });
+        // store: true = compression level 0 (no compression, just bundling).
+        // Files are piped directly from disk into the archive stream without
+        // loading them into RAM — multer.diskStorage already wrote them to /tmp.
+        const archive = archiver("zip", { store: true });
         output.on("close", resolve);
         archive.on("error", reject);
         archive.pipe(output);
