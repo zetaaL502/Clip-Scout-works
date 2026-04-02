@@ -1,5 +1,6 @@
 [build]
-buildCommand = "npm install -g pnpm@10.26.1 && pnpm install --no-frozen-lockfile --filter @workspace/api-server... && pnpm --filter @workspace/api-server run build"
+installCommand = "echo 'no install needed'"
+buildCommand = "echo 'using pre-built dist'"
 
 [deploy]
 startCommand = "node --enable-source-maps ./artifacts/api-server/dist/index.mjs"

@@ -2,6 +2,8 @@
 
 # compiled output
 dist
+!artifacts/api-server/dist
+artifacts/api-server/dist/*.map
 tmp
 out-tsc
 *.tsbuildinfo
