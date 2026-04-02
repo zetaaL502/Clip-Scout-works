@@ -1,0 +1,154 @@
+
+
+vibrant-presence
+
+production
+
+
+18
+
+29 days or $5.00 left
+
+
+Agent
+
+Apply 1 change
+
+
+Details
+
+Deploy ⇧+Enter
+
+
+Clip-Scout-works
+Deployments
+Variables
+Metrics
+Settings
+clip-scout-works-production.up.railway.app
+asia-southeast1-eqsg3a
+1 Replica
+
+
+
+
+
+
+
+
+
+
+
+
+History
+
+Clip-Scout-works
+/
+c076685a
+Active
+
+Apr 2, 2026, 5:44 PM GMT+5:45
+clip-scout-works-production.up.railway.app
+Details
+Build Logs
+Deploy Logs
+HTTP Logs
+Network Flow Logs
+Search build logs
+
+You reached the start of the range
+Apr 2, 2026, 5:39 PM
+ 
+[Region: asia-southeast1]
+=========================
+Using Detected Dockerfile
+=========================
+
+context: 165f-AVXa
+
+internal
+load build definition from Dockerfile
+0ms
+
+internal
+load metadata for docker.io/library/node:20-slim
+766ms
+
+internal
+load .dockerignore
+0ms
+
+internal
+load build context
+0ms
+
+runner
+COPY --from=base /app/artifacts/api-server/dist ./artifacts/api-server/dist cached
+0ms
+
+base
+RUN pnpm --filter @workspace/api-server run build cached
+0ms
+
+base
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server... cached
+0ms
+
+base
+COPY artifacts/api-server/ ./artifacts/api-server/ cached
+0ms
+
+base
+COPY lib/ ./lib/ cached
+0ms
+
+base
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./ cached
+0ms
+
+base
+WORKDIR /app cached
+0ms
+
+base
+RUN npm install -g pnpm@10.26.1 cached
+0ms
+
+runner
+WORKDIR /app cached
+0ms
+
+runner
+COPY --from=base /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules cached
+0ms
+
+runner
+COPY --from=base /app/node_modules ./node_modules cached
+0ms
+
+auth
+sharing credentials for production-asia-southeast1-eqsg3a.railway-registry.com
+1ms
+
+importing to docker
+1s
+Build time: 5.85 seconds
+You reached the end of the range
+Apr 2, 2026, 5:49 PM
+
+
+7 logs
+Ask about these logs...
+
+
+
+New Agent
+
+Apply 1 change
+
+
+Details
+
+Deploy
+You're out of tokens
+Upgrade to Pro for 4x more
