@@ -270,8 +270,9 @@ router.post("/trim-video", async (req, res) => {
   }
 });
 
-// Accepts a Pexels CDN URL, fetches it server-side, trims to MAX_CLIP_SECONDS,
-// and returns a proper MP4 with correct duration metadata.
+// Accepts a Pexels CDN URL and proxies the raw video directly to the browser.
+// No FFmpeg needed — Pexels already enforces 5–30s at search time, and the
+// original MP4 already has correct duration metadata.
 router.post("/trim-video-url", async (req, res) => {
   const { url } = req.body as { url?: string };
   if (!url || typeof url !== "string") {
@@ -287,8 +288,8 @@ router.post("/trim-video-url", async (req, res) => {
     return;
   }
 
-  const ALLOWED_TRIM_HOSTS = ["videos.pexels.com"];
-  const isAllowed = ALLOWED_TRIM_HOSTS.some(
+  const ALLOWED_PROXY_HOSTS = ["videos.pexels.com"];
+  const isAllowed = ALLOWED_PROXY_HOSTS.some(
     (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`)
   );
   if (!isAllowed) {
@@ -299,7 +300,6 @@ router.post("/trim-video-url", async (req, res) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
 
-  let tmpPath: string | null = null;
   try {
     const upstream = await fetch(url, {
       signal: controller.signal,
@@ -317,30 +317,28 @@ router.post("/trim-video-url", async (req, res) => {
       return;
     }
 
-    const upstreamBody = upstream.body;
-    tmpPath = await runFfmpegTrim(
-      (stdin) => {
-        const reader = upstreamBody.getReader();
-        (async () => {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) { stdin.end(); break; }
-              if (!stdin.write(value)) {
-                await new Promise<void>((resolve) => stdin.once("drain", resolve));
-              }
-            }
-          } catch { stdin.destroy(); }
-        })();
-      },
-      (msg) => req.log.warn({ msg }, "ffmpeg trim-url stderr"),
-      (msg) => req.log.error({ msg }, "ffmpeg trim-url error"),
-    );
+    res.setHeader("Content-Type", upstream.headers.get("content-type") || "video/mp4");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "no-store");
+    const contentLength = upstream.headers.get("content-length");
+    if (contentLength) res.setHeader("Content-Length", contentLength);
 
-    sendTmpFile(tmpPath, res);
+    const reader = upstream.body.getReader();
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { res.end(); break; }
+          res.write(value);
+        }
+      } catch (err) {
+        req.log.error({ err }, "proxy stream error");
+        if (!res.headersSent) res.status(500).end();
+        else res.end();
+      }
+    })();
   } catch (err) {
     clearTimeout(timer);
-    if (tmpPath) cleanupTmp(tmpPath);
     const isAbort = (err as Error)?.name === "AbortError";
     if (!res.headersSent) {
       res.status(isAbort ? 504 : 502).json({ error: isAbort ? "Fetch timed out" : "Failed to fetch video" });
