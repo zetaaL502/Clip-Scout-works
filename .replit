@@ -34,13 +34,13 @@ args = "API Server"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/clipscout run dev"
-waitForPort = 3001
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=3001 BASE_PATH=/ pnpm --filter @workspace/clipscout run dev"
+waitForPort = 3001
 
 [[workflows.workflow]]
 name = "API Server"
@@ -51,7 +51,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/api-server run dev"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
 waitForPort = 8080
 
 [agent]
