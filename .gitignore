@@ -4,6 +4,7 @@
 dist
 !artifacts/api-server/dist
 artifacts/api-server/dist/*.map
+!artifacts/clipscout/dist
 tmp
 out-tsc
 *.tsbuildinfo

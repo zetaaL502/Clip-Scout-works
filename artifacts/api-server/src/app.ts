@@ -1,12 +1,16 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app: Express = express();
 
-// --- Simple in-memory rate limiter: max 60 requests per IP per minute ---
+// --- Simple in-memory rate limiter: max 200 requests per IP per minute ---
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 function rateLimiter(req: Request, res: Response, next: NextFunction): void {
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket?.remoteAddress ?? "unknown";
@@ -25,7 +29,7 @@ function rateLimiter(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-// --- CORS: only allow Replit-hosted origins ---
+// --- CORS ---
 const corsOptions: cors.CorsOptions = {
   origin(origin, callback) {
     if (
@@ -33,7 +37,9 @@ const corsOptions: cors.CorsOptions = {
       /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
       origin.endsWith(".replit.dev") ||
       origin.endsWith(".replit.app") ||
-      origin.endsWith(".pike.replit.dev")
+      origin.endsWith(".pike.replit.dev") ||
+      origin.endsWith(".railway.app") ||
+      origin.endsWith(".up.railway.app")
     ) {
       callback(null, true);
     } else {
@@ -68,5 +74,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// --- Serve frontend static files ---
+const frontendDist = path.resolve(__dirname, "../../clipscout/dist/public");
+app.use(express.static(frontendDist));
+
+// --- Catch-all: serve index.html for client-side routing ---
+app.get("*", (_req: Request, res: Response) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 export default app;
