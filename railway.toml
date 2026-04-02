@@ -1,14 +1,5 @@
 [build]
-builder = "NIXPACKS"
-
-[build.nixpacksPlan.phases.install]
-cmds = [
-  "npm install -g pnpm@10.26.1",
-  "pnpm install --no-frozen-lockfile --filter @workspace/api-server..."
-]
-
-[build.nixpacksPlan.phases.build]
-cmds = ["pnpm --filter @workspace/api-server run build"]
+buildCommand = "npm install -g pnpm@10.26.1 && pnpm install --no-frozen-lockfile --filter @workspace/api-server... && pnpm --filter @workspace/api-server run build"
 
 [deploy]
 startCommand = "node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
