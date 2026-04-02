@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, Download, Settings, SquareCheck as CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Download, Settings, SquareCheck as CheckSquare, Square, Smartphone } from 'lucide-react';
 import { SegmentCard } from '../components/SegmentCard';
 import { storage } from '../storage';
 import { fetchBestPexelsExportUrl, fetchPexelsClips } from '../api';
@@ -7,6 +7,7 @@ import { useToastCtx } from '../context/ToastContext';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import type { Clip, Segment } from '../types';
+import { ServerExportModal, type ServerExportState } from '../components/ServerExportModal';
 
 interface Props {
   onBack: () => void;
@@ -168,6 +169,7 @@ export function GridPage({ onBack, onSettings }: Props) {
   const [bulkSelectNonce, setBulkSelectNonce] = useState(0);
   const [exporting, setExporting] = useState(false);
   const exportInFlightRef = useRef(false);
+  const [serverExportState, setServerExportState] = useState<ServerExportState | null>(null);
   const exportLockKey = '__clipscout_export_lock__';
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -487,6 +489,60 @@ export function GridPage({ onBack, onSettings }: Props) {
     }
   }
 
+  async function handleServerExport() {
+    if (selectedCount === 0 || serverExportState?.status === 'processing') return;
+
+    const clipByKey = new Map<string, Clip>();
+    segments.forEach((seg, segIdx) => {
+      const segClips = allClips[seg.id] ?? [];
+      segClips.forEach((clip, clipIdx) => {
+        clipByKey.set(`segment_${segIdx}_clip_${clipIdx}`, clip);
+      });
+    });
+
+    const sortedSelections = selections
+      .map((key, idx) => ({ key, idx }))
+      .sort((a, b) => {
+        const [, sA] = a.key.split('_');
+        const [, sB] = b.key.split('_');
+        const diff = parseInt(sA ?? '0', 10) - parseInt(sB ?? '0', 10);
+        return diff !== 0 ? diff : a.idx - b.idx;
+      })
+      .map(({ key }) => key);
+
+    const urls: string[] = [];
+    for (const key of sortedSelections) {
+      const clip = clipByKey.get(key);
+      if (!clip) continue;
+      try {
+        const url = clip.source === 'pexels'
+          ? await resolvePexelsCdnUrl(clip)
+          : clip.media_url ?? null;
+        if (url) urls.push(url);
+      } catch {
+        // skip unresolvable clips
+      }
+    }
+
+    if (urls.length === 0) {
+      addToast('error', 'Could not resolve any clip URLs.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/server-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls }),
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const { jobId } = await res.json() as { jobId: string };
+      setServerExportState({ jobId, current: 0, total: urls.length, status: 'processing' });
+    } catch {
+      addToast('error', 'Failed to start server export. Please try again.');
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       <style>
@@ -532,6 +588,15 @@ export function GridPage({ onBack, onSettings }: Props) {
               <Download size={16} />
               <span className="hidden sm:inline">Export ZIP</span>
               <span>({selectedCount})</span>
+            </button>
+            <button
+              onClick={handleServerExport}
+              disabled={selectedCount === 0 || serverExportState?.status === 'processing'}
+              className="flex items-center gap-1.5 bg-[#6366f1] disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-2 px-3 rounded-xl text-sm transition-colors active:scale-95"
+              title="Export to phone via QR code"
+            >
+              <Smartphone size={16} />
+              <span className="hidden sm:inline">Phone</span>
             </button>
           </div>
         </div>
@@ -611,6 +676,14 @@ export function GridPage({ onBack, onSettings }: Props) {
           />
         ))}
       </div>
+
+      {serverExportState && (
+        <ServerExportModal
+          state={serverExportState}
+          onUpdate={(update) => setServerExportState((prev) => prev ? { ...prev, ...update } : null)}
+          onClose={() => setServerExportState(null)}
+        />
+      )}
 
       {exporting && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
