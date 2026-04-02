@@ -1,8 +1,8 @@
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+buildCommand = "pnpm install --no-frozen-lockfile && pnpm run build"
 
 [deploy]
+startCommand = "node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
 healthcheckPath = "/api/healthz"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
