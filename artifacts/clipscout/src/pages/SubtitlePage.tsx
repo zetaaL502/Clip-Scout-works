@@ -93,6 +93,7 @@ export function SubtitlePage() {
   const [stage, setStage] = useState<'setup' | 'processing' | 'done'>('setup');
   const [proc, setProc] = useState<ProcState | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ---- file management ---- */
@@ -199,6 +200,7 @@ export function SubtitlePage() {
         };
       });
       setStage('done');
+      setShowQr(true);
     } catch (err) {
       setProc(prev =>
         prev ? { ...prev, errorMsg: err instanceof Error ? err.message : String(err) } : prev,
@@ -207,7 +209,7 @@ export function SubtitlePage() {
     }
   };
 
-  const reset = () => { setEntries([]); setStage('setup'); setProc(null); };
+  const reset = () => { setEntries([]); setStage('setup'); setProc(null); setShowQr(false); };
 
   const results = proc?.results ?? [];
 
@@ -449,24 +451,45 @@ export function SubtitlePage() {
                 ))}
               </div>
 
-              {/* Single QR code for all files */}
-              <div className="border border-gray-800 rounded-2xl p-6 flex flex-col items-center gap-4">
-                <p className="font-semibold text-sm text-center">
-                  Scan with phone to download all {results.length} SRT file{results.length !== 1 ? 's' : ''}
-                </p>
-                <div className="bg-white rounded-2xl p-4">
-                  <QRCodeSVG value={qrPageUrl} size={220} />
-                </div>
-                <p className="text-xs text-gray-500 text-center">
-                  Opens a page with download buttons for every file.<br />
-                  Files available for 30 minutes.
-                </p>
-              </div>
+              {/* Reopen QR button */}
+              <button
+                onClick={() => setShowQr(true)}
+                className="w-full py-3 rounded-2xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors text-sm font-medium"
+              >
+                Show QR code again
+              </button>
             </>
           )}
 
         </div>
       </div>
+
+      {/* QR popup modal */}
+      {showQr && qrPageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setShowQr(false)}
+        >
+          <div
+            className="bg-[#111] rounded-2xl p-7 flex flex-col items-center gap-5 shadow-2xl border border-gray-800 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full">
+              <p className="font-semibold text-base">Scan to download on your phone</p>
+              <button onClick={() => setShowQr(false)} className="text-gray-500 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="bg-white rounded-2xl p-4">
+              <QRCodeSVG value={qrPageUrl} size={220} />
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Opens a download page with all {results.length} SRT file{results.length !== 1 ? 's' : ''}.<br />
+              Files available for 30 minutes.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
