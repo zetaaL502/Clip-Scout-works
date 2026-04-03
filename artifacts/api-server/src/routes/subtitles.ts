@@ -131,21 +131,20 @@ router.post("/subtitles/process-many", expressJson({ limit: "10kb" }), async (re
         language_code: langCode,
       };
 
-      let txRes = await fetch(`${ASSEMBLYAI_API}/transcript`, {
-        method: "POST",
-        headers: { Authorization: apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify(txBody),
-      });
-
-      // Auto-retry on rate limit with 20s pause
-      if (txRes.status === 429) {
-        logger.warn({ idx, originalName }, "Rate limited (429) — pausing 20s then retrying...");
-        await sleep(20000);
+      // Submit transcription with exponential backoff retry on 429
+      let txRes!: Response;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (attempt > 0) {
+          const waitMs = Math.min(20000 * Math.pow(2, attempt - 1), 120000);
+          logger.warn({ idx, originalName, attempt, waitMs }, "Rate limited — backing off...");
+          await sleep(waitMs);
+        }
         txRes = await fetch(`${ASSEMBLYAI_API}/transcript`, {
           method: "POST",
           headers: { Authorization: apiKey, "Content-Type": "application/json" },
           body: JSON.stringify(txBody),
         });
+        if (txRes.status !== 429) break;
       }
 
       if (!txRes.ok) {
