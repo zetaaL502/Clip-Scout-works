@@ -16,7 +16,8 @@ const LANGUAGES = [
 ];
 
 const MAX_FILES = 5;
-const CHUNK_SIZE = 50 * 1024;
+const CHUNK_SIZE = 256 * 1024;
+const PARALLEL_CHUNKS = 4;
 
 type OverallStep = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -32,31 +33,46 @@ interface FileProgress {
   uploaded: boolean;
 }
 
+async function encodeChunk(file: File, index: number, total: number): Promise<string> {
+  const start = index * CHUNK_SIZE;
+  const chunk = file.slice(start, start + CHUNK_SIZE);
+  const arrayBuffer = await chunk.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (let j = 0; j < bytes.byteLength; j++) binary += String.fromCharCode(bytes[j]);
+  return btoa(binary);
+}
+
+async function sendChunk(sessionId: string, chunkIndex: number, totalChunks: number, b64: string): Promise<void> {
+  const res = await fetch('/api/subtitles/chunk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, chunkIndex, totalChunks, data: b64 }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? 'Chunk upload failed');
+  }
+}
+
 async function uploadFileInChunks(
   file: File,
   sessionId: string,
   onProgress: (pct: number) => void,
 ): Promise<number> {
   const total = Math.ceil(file.size / CHUNK_SIZE);
-  for (let i = 0; i < total; i++) {
-    const start = i * CHUNK_SIZE;
-    const chunk = file.slice(start, start + CHUNK_SIZE);
-    const arrayBuffer = await chunk.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    for (let j = 0; j < bytes.byteLength; j++) binary += String.fromCharCode(bytes[j]);
-    const b64 = btoa(binary);
+  let done = 0;
 
-    const res = await fetch('/api/subtitles/chunk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, chunkIndex: i, totalChunks: total, data: b64 }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error((err as { error?: string }).error ?? 'Chunk upload failed');
-    }
-    onProgress(Math.round(((i + 1) / total) * 100));
+  for (let batch = 0; batch < total; batch += PARALLEL_CHUNKS) {
+    const indices = Array.from({ length: Math.min(PARALLEL_CHUNKS, total - batch) }, (_, k) => batch + k);
+    await Promise.all(
+      indices.map(async (i) => {
+        const b64 = await encodeChunk(file, i, total);
+        await sendChunk(sessionId, i, total, b64);
+        done++;
+        onProgress(Math.round((done / total) * 100));
+      }),
+    );
   }
   return total;
 }

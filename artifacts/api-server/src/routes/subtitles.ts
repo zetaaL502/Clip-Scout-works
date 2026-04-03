@@ -14,7 +14,7 @@ function scheduleCleanup(filePath: string) {
 }
 
 // --- Chunk upload (same chunked JSON/base64 approach to bypass proxy limits) ---
-router.post("/subtitles/chunk", expressJson({ limit: "128kb" }), (req, res) => {
+router.post("/subtitles/chunk", expressJson({ limit: "512kb" }), (req, res) => {
   const { sessionId, chunkIndex, totalChunks, data } = req.body as Record<string, string | number>;
   if (!sessionId || chunkIndex === undefined || !totalChunks || !data) {
     res.status(400).json({ error: "Missing sessionId, chunkIndex, totalChunks, or data." });
