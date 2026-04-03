@@ -1,0 +1,23 @@
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=0fff28e5-8ffd-4001-9d59-678a642487c0:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'ambient-light-sensor'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'battery'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'execution-while-not-rendered'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'execution-while-out-of-viewport'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'layout-animations'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'legacy-image-formats'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'navigation-override'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'oversized-images'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'publickey-credentials'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'speaker-selection'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'unoptimized-images'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'unsized-media'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Allow attribute will take precedence over 'allowfullscreen'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/__replco/workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Allow attribute will take precedence over 'allowpaymentrequest'.
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev:3001/:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=35b45b98-52a9-4a7e-a929-a2a33ed974be:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=6001f88a-4bab-43f2-be4f-bd4992b9926a:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+events.launchdarkly.com/events/bulk/62b35a865152ab14c5942820:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+events.launchdarkly.com/events/bulk/62b35a865152ab14c5942820:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+injected.js:37 Compressed to 19.5 MB
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev/api/subtitles/chunk:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)
