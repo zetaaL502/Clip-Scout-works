@@ -217,6 +217,34 @@ export function QuickSendPage() {
             </button>
           </div>
         )}
+
+      {/* QR modal overlay */}
+      {transfer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={reset}>
+          <div className="bg-[#111] rounded-2xl p-6 flex flex-col items-center gap-4 shadow-2xl border border-gray-800 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between w-full">
+              <p className="text-white font-semibold">Scan to download</p>
+              <button onClick={reset} className="text-gray-500 hover:text-white transition-colors ml-6">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="bg-white rounded-xl p-3">
+              <QRCodeSVG value={downloadUrl} size={220} />
+            </div>
+            <div className="flex items-center gap-1.5 text-amber-400 text-xs">
+              <Clock size={13} />
+              <span>Link expires in 20 minutes</span>
+            </div>
+            <a
+              href={downloadUrl}
+              className="w-full text-center bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors text-sm"
+              download
+            >
+              Download on this device
+            </a>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

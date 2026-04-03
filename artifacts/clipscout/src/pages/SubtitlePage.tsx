@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Upload, FileAudio, Download, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, FileAudio, Download, CheckCircle, Loader2, AlertCircle, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 const LANGUAGES = [
@@ -144,6 +144,7 @@ export function SubtitlePage() {
   const [result, setResult] = useState<Result | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (f: File) => {
@@ -199,6 +200,7 @@ export function SubtitlePage() {
       const data = (await res.json()) as Result;
       setResult(data);
       setStep('done');
+      setQrOpen(true);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Something went wrong');
       setStep('error');
@@ -342,6 +344,31 @@ export function SubtitlePage() {
           </div>
         </div>
       </div>
+
+      {/* QR modal overlay — pops up automatically when done */}
+      {qrOpen && result && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setQrOpen(false)}>
+          <div className="bg-[#111] rounded-2xl p-6 flex flex-col items-center gap-4 shadow-2xl border border-gray-800 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between w-full">
+              <p className="text-white font-semibold">Scan to download SRT</p>
+              <button onClick={() => setQrOpen(false)} className="text-gray-500 hover:text-white transition-colors ml-6">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="bg-white rounded-xl p-3">
+              <QRCodeSVG value={downloadUrl} size={220} />
+            </div>
+            <button
+              onClick={downloadSrt}
+              className="flex items-center gap-2 w-full justify-center py-2.5 rounded-xl text-sm font-semibold border border-[#22c55e] text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+            >
+              <Download size={16} />
+              Download {result.srtFileName}
+            </button>
+            <p className="text-xs text-gray-500">File auto-deletes after download or in 10 minutes</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
