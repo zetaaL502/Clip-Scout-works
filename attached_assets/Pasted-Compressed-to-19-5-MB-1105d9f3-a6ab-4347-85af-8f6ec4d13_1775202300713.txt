@@ -1,0 +1,119 @@
+Compressed to 19.5 MB
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev/api/subtitles/chunk:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)
+
+stallwart.build.js:1 stallwart: failed ping 1
+stallwart.build.js:1 stallwart: failed ping 2
+stallwart.build.js:1 stallwart: failed ping 3
+09q6kg6~li9od.js:21 task queue exceeded allotted deadline by 23ms
+(anonymous) @ 09q6kg6~li9od.js:21
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+_process @ 12jw72pvrofje.js:6
+(anonymous) @ 12jw72pvrofje.js:6
+r @ 09q6kg6~li9od.js:21
+setTimeout
+(anonymous) @ 09q6kg6~li9od.js:21
+_requestCallback @ 12jw72pvrofje.js:6
+_start @ 12jw72pvrofje.js:6
+enqueue @ 12jw72pvrofje.js:6
+_doWarmUp @ 12jw72pvrofje.js:10
+warmUp @ 12jw72pvrofje.js:10
+_refreshCharAtlas @ 12jw72pvrofje.js:67
+resize @ 12jw72pvrofje.js:67
+resize @ 12jw72pvrofje.js:67
+handleResize @ 12jw72pvrofje.js:67
+handleDevicePixelRatioChange @ 12jw72pvrofje.js:67
+handleDevicePixelRatioChange @ 0kg3hirab8ddg.js:14
+(anonymous) @ 0kg3hirab8ddg.js:14
+_deliver @ 0kg3hirab8ddg.js:12
+_deliverQueue @ 0kg3hirab8ddg.js:12
+fire @ 0kg3hirab8ddg.js:12
+(anonymous) @ 0kg3hirab8ddg.js:8
+_deliver @ 0kg3hirab8ddg.js:12
+fire @ 0kg3hirab8ddg.js:12
+_setDprAndFireIfDiffers @ 0kg3hirab8ddg.js:14
+(anonymous) @ 0kg3hirab8ddg.js:14
+r @ 09q6kg6~li9od.js:21
+09q6kg6~li9od.js:21  POST https://logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=d7ad3d9a-52f9-4ebc-b6f8-479a9009b16b net::ERR_BLOCKED_BY_CLIENT
+(anonymous) @ 09q6kg6~li9od.js:21
+s @ 10752fkk0rvs8.js:2
+tb @ 10752fkk0rvs8.js:2
+tm @ 10752fkk0rvs8.js:2
+send @ 10752fkk0rvs8.js:2
+e.flush @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+e.notify @ 10752fkk0rvs8.js:2
+l @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+_ @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+r @ 09q6kg6~li9od.js:21
+09q6kg6~li9od.js:21  POST https://logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=1c582fd3-62e4-478a-864a-d7a4f08fae69 net::ERR_BLOCKED_BY_CLIENT
+(anonymous) @ 09q6kg6~li9od.js:21
+(anonymous) @ 09q6kg6~li9od.js:21
+tC @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+_ @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+Promise.then
+s @ 10752fkk0rvs8.js:2
+tb @ 10752fkk0rvs8.js:2
+tm @ 10752fkk0rvs8.js:2
+send @ 10752fkk0rvs8.js:2
+e.flush @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+e.notify @ 10752fkk0rvs8.js:2
+l @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+_ @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+r @ 09q6kg6~li9od.js:21
