@@ -1,0 +1,45 @@
+Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+0-.i~1fsqlqiz.js:2 WebSocket connection to 'wss://eval.janeway.platform.replit.com/wsv2/v2.public.Q2dZSTl1Rzl6Z1lTQmdpVi9yM09CaUlIYW1GdVpYZGhlVEFBT29BQ0NpUXhNVEExWkRsbU15MWhObUZpTFRRek5EY3RPRFZoWmkwNFpqWmxZelJrTVRNeFkyWVNBMjVwZUJvWmNtVndiR2wwTFhKbGNHd3RabWxzWlhNdGFtRnVaWGRoZVNJU1EyeHBjQzFUWTI5MWRDMTNiM0pyY3kweEtndG5ZVzVrWkdkaGJtUmtNRUpYQ2hweVpYQnNhWFF0Y21Wd2JDMWliRzlqYTNNdGFtRnVaWGRoZVJJWWNtVndiR2wwTFhKbGNHd3RiV1YwWVMxcVlXNWxkMkY1R2g5eVpYQnNhWFF0YldGeVoyRnlhVzVsTFdKc2IyTnJjeTFxWVc1bGQyRjVTZ2NJa01LV0d4QUJVQUI0QUlJQkZXTnZibTVsWTNSdmNuTXVjbVZ3YkdsMExtTnZiWW9CR0FvUVJFOWZVMFZEVlZKSlZGbGZVME5CVGhJRWRISjFaVklsQ0FFUWdJQ0FnQ0FaQUFBQUFBQUFFRUFoQUFBQUFBQUFFRUFvZ0lDQWdNZ0JNQUk0QUdBQWFoSUlrTUtXR3hJTFoyRnVaR1JuWVc1a1pEQ2FBUW9LQ0RBdU1DNDFORGs0b0FFQQ0jd9_WN4C2vTXMNy_SMVF_EuV9WFZzCOdVuvbX8Pj6YU4qwpg6cDucKBtSXJQGlv0nEoNukWNTEMUphq5j3Qw.Q2dad2NtOWtPak1pQ25KbGNHeHBkQzVqYjIwPQ' failed: WebSocket is closed before the connection is established.
+cleanupSocket @ 0-.i~1fsqlqiz.js:2
+y @ 0-.i~1fsqlqiz.js:2
+(anonymous) @ 0-.i~1fsqlqiz.js:2
+r @ 09q6kg6~li9od.js:21
+events.launchdarkly.com/events/bulk/62b35a865152ab14c5942820:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+events.launchdarkly.com/events/bulk/62b35a865152ab14c5942820:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=5985e934-8d45-4c8b-b93f-0d7c5ce2b3ff:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=d16906a5-def7-41ca-ba7e-d161303cb56e:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'ambient-light-sensor'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'battery'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'execution-while-not-rendered'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'execution-while-out-of-viewport'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'layout-animations'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'legacy-image-formats'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'navigation-override'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'oversized-images'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'publickey-credentials'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'speaker-selection'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'unoptimized-images'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'unsized-media'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Allow attribute will take precedence over 'allowfullscreen'.
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Allow attribute will take precedence over 'allowpaymentrequest'.
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=d14f1878-546a-499c-996a-461be127e693:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=4ec73442-dd34-4fc4-b15b-be324f1d04d5:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+injected.js:37 Compressed to 19.5 MB
+1105d9f3-a6ab-4347-85af-8f6ec4d131cf-00-29lxzlv9xh8vn.janeway.replit.dev/api/subtitles/chunk:1  Failed to load resource: the server responded with a status of 502 (Bad Gateway)
+
+09q6kg6~li9od.js:21  POST https://logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=a518dd6f-4c10-4597-bb60-fafbcd9902f1 net::ERR_BLOCKED_BY_CLIENT
+(anonymous) @ 09q6kg6~li9od.js:21
+s @ 10752fkk0rvs8.js:2
+tb @ 10752fkk0rvs8.js:2
+tm @ 10752fkk0rvs8.js:2
+send @ 10752fkk0rvs8.js:2
+e.flush @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+e.notify @ 10752fkk0rvs8.js:2
+l @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+_ @ 10752fkk0rvs8.js:2
+(anonymous) @ 10752fkk0rvs8.js:2
+r @ 09q6kg6~li9od.js:21
+09q6kg6~li9od.js:21  POST https://logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Axhr%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3A59d0d1d5&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=1c75ccc9-44d2-4401-b969-3377c3f29a52 net::ERR_BLOCKED_BY_CLIENT
