@@ -10,9 +10,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app: Express = express();
 
-// --- Simple in-memory rate limiter: max 200 requests per IP per minute ---
+// --- Simple in-memory rate limiter ---
+// Chunk uploads are excluded (they can number in the thousands for large files).
+// All other routes: max 500 requests per IP per minute.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 function rateLimiter(req: Request, res: Response, next: NextFunction): void {
+  // Chunk uploads are high-volume by design — skip counting them
+  if (req.url.includes("/subtitles/chunk")) {
+    next();
+    return;
+  }
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket?.remoteAddress ?? "unknown";
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
@@ -22,7 +29,7 @@ function rateLimiter(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   entry.count += 1;
-  if (entry.count > 200) {
+  if (entry.count > 500) {
     res.status(429).json({ error: "Too many requests. Please slow down." });
     return;
   }
