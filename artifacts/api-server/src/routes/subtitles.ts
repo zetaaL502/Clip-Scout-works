@@ -89,7 +89,7 @@ router.post("/subtitles/process-many", expressJson({ limit: "10kb" }), async (re
         const { upload_url } = await uploadRes.json() as { upload_url: string };
 
         // 3. Submit transcription job
-        const txBody: Record<string, string> = { audio_url: upload_url };
+        const txBody: Record<string, string> = { audio_url: upload_url, speech_model: "universal-2" };
         if (language && language !== "english") txBody.language_code = language;
         const txRes = await fetch(`${ASSEMBLYAI_API}/transcript`, {
           method: "POST",
