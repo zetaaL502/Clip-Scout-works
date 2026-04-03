@@ -16,7 +16,7 @@ const LANGUAGES = [
 ];
 
 const MAX_FILES = 5;
-const CHUNK_SIZE = 256 * 1024;
+const CHUNK_SIZE = 100 * 1024;
 const PARALLEL_CHUNKS = 4;
 
 type OverallStep = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
