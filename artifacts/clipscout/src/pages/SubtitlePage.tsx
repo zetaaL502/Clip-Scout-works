@@ -3,93 +3,50 @@ import { Upload, FileAudio, Download, CheckCircle, Loader2, AlertCircle, X } fro
 import { QRCodeSVG } from 'qrcode.react';
 
 const LANGUAGES = [
-  { value: 'english', label: 'English (Translated)' },
-  { value: 'spanish', label: 'Spanish' },
-  { value: 'hindi', label: 'Hindi' },
-  { value: 'french', label: 'French' },
-  { value: 'german', label: 'German' },
-  { value: 'portuguese', label: 'Portuguese' },
-  { value: 'japanese', label: 'Japanese' },
-  { value: 'chinese', label: 'Chinese' },
-  { value: 'arabic', label: 'Arabic' },
-  { value: 'korean', label: 'Korean' },
+  { value: 'english', label: 'English' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'ko', label: 'Korean' },
 ];
 
-const CHUNK_SIZE = 50 * 1024; // 50KB binary per chunk → ~68KB base64 JSON body — safely under all proxy limits
+const MAX_FILES = 5;
+const CHUNK_SIZE = 50 * 1024;
 
-type Step = 'idle' | 'compressing' | 'uploading' | 'processing' | 'done' | 'error';
+type OverallStep = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
 
-interface Result {
-  transcript: string;
+interface SrtFile {
   srtFileName: string;
   downloadUrl: string;
 }
 
-// --- Client-side audio compression ---
-// Decodes any audio file and resamples to 16kHz mono WAV
-function writeWavHeader(pcmBuffer: ArrayBuffer, sampleRate: number): ArrayBuffer {
-  const header = new ArrayBuffer(44);
-  const view = new DataView(header);
-  const writeStr = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  };
-  writeStr(0, 'RIFF');
-  view.setUint32(4, 36 + pcmBuffer.byteLength, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true); // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  view.setUint32(40, pcmBuffer.byteLength, true);
-  const out = new Uint8Array(44 + pcmBuffer.byteLength);
-  out.set(new Uint8Array(header), 0);
-  out.set(new Uint8Array(pcmBuffer), 44);
-  return out.buffer;
+interface FileProgress {
+  name: string;
+  size: number;
+  uploadPct: number;
+  uploaded: boolean;
 }
 
-async function compressInBrowser(file: File): Promise<ArrayBuffer> {
-  const TARGET_RATE = 16000;
-  const raw = await file.arrayBuffer();
-  const tempCtx = new AudioContext();
-  const decoded = await tempCtx.decodeAudioData(raw);
-  await tempCtx.close();
-
-  const frames = Math.ceil(decoded.duration * TARGET_RATE);
-  const offline = new OfflineAudioContext(1, frames, TARGET_RATE);
-  const src = offline.createBufferSource();
-  src.buffer = decoded;
-  src.connect(offline.destination);
-  src.start(0);
-  const rendered = await offline.startRendering();
-
-  const floats = rendered.getChannelData(0);
-  const int16 = new Int16Array(floats.length);
-  for (let i = 0; i < floats.length; i++) {
-    const s = Math.max(-1, Math.min(1, floats[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return writeWavHeader(int16.buffer, TARGET_RATE);
-}
-
-// --- Chunked upload (JSON + base64 to avoid proxy multipart limits) ---
-async function uploadInChunks(
-  data: ArrayBuffer,
+async function uploadFileInChunks(
+  file: File,
   sessionId: string,
   onProgress: (pct: number) => void,
-): Promise<void> {
-  const total = Math.ceil(data.byteLength / CHUNK_SIZE);
+): Promise<number> {
+  const total = Math.ceil(file.size / CHUNK_SIZE);
   for (let i = 0; i < total; i++) {
     const start = i * CHUNK_SIZE;
-    const chunkBytes = new Uint8Array(data, start, Math.min(CHUNK_SIZE, data.byteLength - start));
-    // encode binary → base64 string
+    const chunk = file.slice(start, start + CHUNK_SIZE);
+    const arrayBuffer = await chunk.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
     let binary = '';
-    for (let j = 0; j < chunkBytes.byteLength; j++) binary += String.fromCharCode(chunkBytes[j]);
+    for (let j = 0; j < bytes.byteLength; j++) binary += String.fromCharCode(bytes[j]);
     const b64 = btoa(binary);
+
     const res = await fetch('/api/subtitles/chunk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -101,95 +58,77 @@ async function uploadInChunks(
     }
     onProgress(Math.round(((i + 1) / total) * 100));
   }
+  return total;
 }
 
-function StepIndicator({ step, uploadPct }: { step: Step; uploadPct: number }) {
-  const steps: { id: Step; label: string }[] = [
-    { id: 'compressing', label: 'Step 1: Compressing in browser' },
-    { id: 'uploading', label: `Step 2: Uploading${step === 'uploading' ? ` (${uploadPct}%)` : ''}` },
-    { id: 'processing', label: 'Step 3: Transcribing & building SRT' },
-  ];
-  const order: Step[] = ['compressing', 'uploading', 'processing', 'done'];
-  const cur = order.indexOf(step);
-  return (
-    <div className="flex flex-col gap-2 my-4">
-      {steps.map((s) => {
-        const idx = order.indexOf(s.id);
-        const done = cur > idx;
-        const active = cur === idx;
-        return (
-          <div key={s.id} className="flex items-center gap-2 text-sm">
-            {done ? (
-              <CheckCircle size={16} className="text-[#22c55e] shrink-0" />
-            ) : active ? (
-              <Loader2 size={16} className="text-[#22c55e] animate-spin shrink-0" />
-            ) : (
-              <div className="w-4 h-4 rounded-full border border-gray-600 shrink-0" />
-            )}
-            <span className={done || active ? 'text-white' : 'text-gray-500'}>
-              {s.label}{active ? '...' : ''}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function SubtitlePage() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [language, setLanguage] = useState('english');
-  const [step, setStep] = useState<Step>('idle');
-  const [uploadPct, setUploadPct] = useState(0);
-  const [result, setResult] = useState<Result | null>(null);
+  const [step, setStep] = useState<OverallStep>('idle');
+  const [fileProgress, setFileProgress] = useState<FileProgress[]>([]);
+  const [srtFiles, setSrtFiles] = useState<SrtFile[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = (f: File) => {
-    setFile(f);
-    setResult(null);
-    setStep('idle');
-    setErrorMsg('');
-    setUploadPct(0);
+  const addFiles = (incoming: FileList | File[]) => {
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.name));
+      const toAdd = Array.from(incoming).filter(f => !existing.has(f.name));
+      return [...prev, ...toAdd].slice(0, MAX_FILES);
+    });
   };
+
+  const removeFile = (name: string) => setFiles(prev => prev.filter(f => f.name !== name));
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped) handleFile(dropped);
+    addFiles(e.dataTransfer.files);
   }, []);
 
-  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const onDragLeave = () => setIsDragging(false);
-
   const process = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setErrorMsg('');
-    setResult(null);
-    setUploadPct(0);
+    setSrtFiles([]);
+    setQrOpen(false);
+
+    const progress: FileProgress[] = files.map(f => ({
+      name: f.name,
+      size: f.size,
+      uploadPct: 0,
+      uploaded: false,
+    }));
+    setFileProgress(progress);
+    setStep('uploading');
 
     try {
-      // Step 1: compress in browser
-      setStep('compressing');
-      const compressed = await compressInBrowser(file);
-      const compressedMB = (compressed.byteLength / (1024 * 1024)).toFixed(1);
-      console.log(`Compressed to ${compressedMB} MB`);
+      const sessions: Array<{ sessionId: string; totalChunks: string; originalName: string }> = [];
 
-      // Step 2: chunked upload
-      setStep('uploading');
-      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const totalChunks = Math.ceil(compressed.byteLength / CHUNK_SIZE);
-      await uploadInChunks(compressed, sessionId, setUploadPct);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-      // Step 3: tell server to assemble + transcribe
+        const totalChunks = await uploadFileInChunks(file, sessionId, (pct) => {
+          setFileProgress(prev => prev.map((p, idx) => idx === i ? { ...p, uploadPct: pct } : p));
+        });
+
+        setFileProgress(prev => prev.map((p, idx) => idx === i ? { ...p, uploaded: true } : p));
+        sessions.push({ sessionId, totalChunks: String(totalChunks), originalName: file.name });
+      }
+
       setStep('processing');
-      const res = await fetch('/api/subtitles/process-chunks', {
+
+      const res = await fetch('/api/subtitles/process-many', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, totalChunks: String(totalChunks), language }),
+        body: JSON.stringify({ sessions, language }),
       });
 
       if (!res.ok) {
@@ -197,8 +136,8 @@ export function SubtitlePage() {
         throw new Error((err as { error?: string }).error ?? 'Processing failed');
       }
 
-      const data = (await res.json()) as Result;
-      setResult(data);
+      const data = await res.json() as { srtFiles: SrtFile[] };
+      setSrtFiles(data.srtFiles);
       setStep('done');
       setQrOpen(true);
     } catch (err) {
@@ -207,23 +146,14 @@ export function SubtitlePage() {
     }
   };
 
-  const downloadUrl = result ? `${window.location.origin}${result.downloadUrl}` : '';
-
-  const downloadSrt = () => {
-    if (!result) return;
-    const a = document.createElement('a');
-    a.href = result.downloadUrl;
-    a.download = result.srtFileName;
-    a.click();
-  };
-
-  const isProcessing = step !== 'idle' && step !== 'done' && step !== 'error';
+  const isProcessing = step === 'uploading' || step === 'processing';
+  const qrSize = srtFiles.length > 2 ? 140 : 200;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="border-b border-gray-800 px-6 py-4">
         <h1 className="text-lg font-semibold">AI Subtitle Generator</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Upload any audio — compressed in browser, uploaded in chunks, transcribed by AI</p>
+        <p className="text-sm text-gray-400 mt-0.5">Upload up to 5 audio files — transcribed by AssemblyAI</p>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-0 h-[calc(100vh-73px)]">
@@ -233,34 +163,60 @@ export function SubtitlePage() {
           {/* Drop zone */}
           <div
             onDrop={onDrop}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onClick={() => fileInputRef.current?.click()}
-            className={`relative border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center
-              ${isDragging ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-gray-700 hover:border-gray-500'}`}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onClick={() => !isProcessing && fileInputRef.current?.click()}
+            className={`relative border-2 border-dashed rounded-xl p-6 transition-colors text-center
+              ${isProcessing ? 'cursor-default opacity-50' : 'cursor-pointer hover:border-gray-500'}
+              ${isDragging ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-gray-700'}`}
           >
             <input
               ref={fileInputRef}
               type="file"
               accept="audio/*,video/*"
+              multiple
               className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+              onChange={(e) => { if (e.target.files) addFiles(e.target.files); }}
             />
-            {file ? (
-              <div className="flex flex-col items-center gap-2">
-                <FileAudio size={32} className="text-[#22c55e]" />
-                <p className="text-sm font-medium text-white truncate max-w-[200px]">{file.name}</p>
-                <p className="text-xs text-gray-400">{(file.size / (1024 * 1024)).toFixed(1)} MB</p>
-                <p className="text-xs text-gray-500">Click to change file</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2">
-                <Upload size={32} className="text-gray-500" />
-                <p className="text-sm font-medium text-gray-300">Drop audio or video file here</p>
-                <p className="text-xs text-gray-500">WAV, MP3, MP4, M4A and more · Any size</p>
-              </div>
+            <Upload size={28} className="text-gray-500 mx-auto mb-2" />
+            <p className="text-sm font-medium text-gray-300">Drop up to {MAX_FILES} audio files</p>
+            <p className="text-xs text-gray-500 mt-1">MP3, WAV, MP4, M4A and more</p>
+            {files.length > 0 && (
+              <p className="text-xs text-[#22c55e] mt-2">{files.length}/{MAX_FILES} added</p>
             )}
           </div>
+
+          {/* File list */}
+          {files.length > 0 && (
+            <ul className="space-y-2">
+              {files.map((file, i) => {
+                const prog = fileProgress[i];
+                return (
+                  <li key={file.name} className="bg-[#1a1a1a] rounded-xl px-4 py-3 border border-gray-800">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <FileAudio size={14} className="text-[#22c55e] shrink-0" />
+                      <span className="text-sm text-white truncate flex-1">{file.name}</span>
+                      <span className="text-xs text-gray-500 shrink-0">{formatSize(file.size)}</span>
+                      {!isProcessing && (
+                        <button onClick={() => removeFile(file.name)} className="text-gray-600 hover:text-red-400 transition-colors">
+                          <X size={13} />
+                        </button>
+                      )}
+                      {prog?.uploaded && <CheckCircle size={13} className="text-[#22c55e] shrink-0" />}
+                    </div>
+                    {prog && (
+                      <div className="w-full bg-gray-800 rounded-full h-1">
+                        <div
+                          className="bg-[#22c55e] h-1 rounded-full transition-all duration-200"
+                          style={{ width: `${prog.uploaded ? 100 : prog.uploadPct}%` }}
+                        />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           {/* Language */}
           <div>
@@ -268,23 +224,26 @@ export function SubtitlePage() {
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#22c55e] transition-colors"
+              disabled={isProcessing}
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#22c55e] transition-colors disabled:opacity-50"
             >
               {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
-            <p className="text-xs text-gray-500 mt-1">"English" translates everything to English. Others transcribe natively.</p>
           </div>
 
-          {/* Process button */}
+          {/* Generate button */}
           <button
             onClick={process}
-            disabled={!file || isProcessing}
+            disabled={files.length === 0 || isProcessing}
             className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[#22c55e] text-black hover:bg-[#16a34a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {isProcessing ? 'Processing...' : 'Generate Subtitles'}
+            {isProcessing ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 size={15} className="animate-spin" />
+                {step === 'uploading' ? 'Uploading...' : 'Transcribing with AssemblyAI...'}
+              </span>
+            ) : `Generate Subtitle${files.length > 1 ? `s (${files.length} files)` : ''}`}
           </button>
-
-          {step !== 'idle' && step !== 'error' && <StepIndicator step={step} uploadPct={uploadPct} />}
 
           {step === 'error' && (
             <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/30 border border-red-900/40 rounded-xl p-3">
@@ -293,79 +252,131 @@ export function SubtitlePage() {
             </div>
           )}
 
-          {step === 'done' && result && (
-            <div className="flex flex-col items-center gap-4 pt-2 border-t border-gray-800">
-              <p className="text-xs text-gray-400 text-center">Scan to download on mobile</p>
-              <div className="bg-white p-3 rounded-xl">
-                <QRCodeSVG value={downloadUrl} size={140} />
-              </div>
+          {step === 'done' && srtFiles.length > 0 && (
+            <div className="flex flex-col gap-2 pt-2 border-t border-gray-800">
+              {srtFiles.map((f) => (
+                <a
+                  key={f.srtFileName}
+                  href={`${window.location.origin}${f.downloadUrl}`}
+                  download={f.srtFileName}
+                  className="flex items-center gap-2 w-full justify-center py-2 rounded-xl text-sm font-semibold border border-[#22c55e] text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+                >
+                  <Download size={14} />
+                  {f.srtFileName}
+                </a>
+              ))}
               <button
-                onClick={downloadSrt}
-                className="flex items-center gap-2 w-full justify-center py-2.5 rounded-xl text-sm font-semibold border border-[#22c55e] text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+                onClick={() => setQrOpen(true)}
+                className="text-xs text-gray-400 hover:text-white transition-colors text-center py-1"
               >
-                <Download size={16} />
-                Download {result.srtFileName}
+                Show QR code{srtFiles.length > 1 ? 's' : ''} again
               </button>
-              <p className="text-xs text-gray-500 text-center">File auto-deletes after download or in 10 minutes</p>
             </div>
           )}
         </div>
 
-        {/* Right panel */}
+        {/* Right panel — status */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="border-b border-gray-800 px-6 py-3 flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-300">Live Script Preview</span>
-            {step === 'done' && (
-              <span className="ml-auto text-xs text-[#22c55e] flex items-center gap-1">
-                <CheckCircle size={12} /> Done
-              </span>
-            )}
+          <div className="border-b border-gray-800 px-6 py-3">
+            <span className="text-sm font-medium text-gray-300">
+              {step === 'idle' && 'Ready'}
+              {step === 'uploading' && 'Uploading files...'}
+              {step === 'processing' && 'Transcribing...'}
+              {step === 'done' && `${srtFiles.length} file${srtFiles.length !== 1 ? 's' : ''} ready`}
+              {step === 'error' && 'Error'}
+            </span>
           </div>
-          <div className="flex-1 overflow-y-auto p-6">
-            {!result && step === 'idle' && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                <FileAudio size={40} className="text-gray-700" />
-                <p className="text-gray-500 text-sm">Your transcript will appear here once processing is complete.</p>
-              </div>
-            )}
-            {isProcessing && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                <Loader2 size={32} className="text-[#22c55e] animate-spin" />
-                <p className="text-gray-400 text-sm">
-                  {step === 'compressing' && 'Compressing audio in your browser...'}
-                  {step === 'uploading' && `Uploading chunks... ${uploadPct}%`}
-                  {step === 'processing' && 'Transcribing with Groq Whisper...'}
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
+            {step === 'idle' && (
+              <>
+                <FileAudio size={44} className="text-gray-700" />
+                <p className="text-gray-500 text-sm text-center">
+                  Add up to 5 audio files and click Generate.<br />
+                  No compression — your original file goes straight to AssemblyAI.
                 </p>
-              </div>
+              </>
             )}
-            {result && (
-              <p className="text-gray-200 leading-relaxed whitespace-pre-wrap text-sm">{result.transcript}</p>
+            {step === 'uploading' && (
+              <>
+                <Loader2 size={36} className="text-[#22c55e] animate-spin" />
+                <p className="text-gray-400 text-sm">Uploading in chunks...</p>
+                <div className="w-full max-w-xs space-y-1.5">
+                  {fileProgress.map((fp) => (
+                    <div key={fp.name} className="flex items-center justify-between text-xs text-gray-500">
+                      <span className="truncate max-w-[200px]">{fp.name}</span>
+                      <span className="shrink-0 ml-2 text-[#22c55e]">
+                        {fp.uploaded ? '✓ done' : `${fp.uploadPct}%`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {step === 'processing' && (
+              <>
+                <Loader2 size={36} className="text-[#22c55e] animate-spin" />
+                <p className="text-gray-400 text-sm">AssemblyAI is transcribing your audio...</p>
+                <p className="text-gray-600 text-xs">Usually takes 1–3 minutes</p>
+              </>
+            )}
+            {step === 'done' && (
+              <>
+                <CheckCircle size={44} className="text-[#22c55e]" />
+                <p className="text-white font-semibold text-lg">
+                  {srtFiles.length} SRT file{srtFiles.length !== 1 ? 's' : ''} ready!
+                </p>
+                <p className="text-gray-500 text-sm">Scan the QR code{srtFiles.length > 1 ? 's' : ''} to download on your phone</p>
+              </>
+            )}
+            {step === 'error' && (
+              <AlertCircle size={44} className="text-red-400" />
             )}
           </div>
         </div>
       </div>
 
-      {/* QR modal overlay — pops up automatically when done */}
-      {qrOpen && result && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setQrOpen(false)}>
-          <div className="bg-[#111] rounded-2xl p-6 flex flex-col items-center gap-4 shadow-2xl border border-gray-800 mx-4" onClick={(e) => e.stopPropagation()}>
+      {/* QR popup — one QR per SRT file */}
+      {qrOpen && srtFiles.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setQrOpen(false)}
+        >
+          <div
+            className="bg-[#111] rounded-2xl p-6 flex flex-col items-center gap-5 shadow-2xl border border-gray-800 max-h-[90vh] overflow-y-auto w-full max-w-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between w-full">
-              <p className="text-white font-semibold">Scan to download SRT</p>
-              <button onClick={() => setQrOpen(false)} className="text-gray-500 hover:text-white transition-colors ml-6">
+              <p className="text-white font-semibold">
+                Scan to download{srtFiles.length > 1 ? ` (${srtFiles.length} files)` : ''}
+              </p>
+              <button onClick={() => setQrOpen(false)} className="text-gray-500 hover:text-white transition-colors">
                 <X size={18} />
               </button>
             </div>
-            <div className="bg-white rounded-xl p-3">
-              <QRCodeSVG value={downloadUrl} size={220} />
+
+            <div className={`grid gap-6 w-full ${srtFiles.length > 1 ? 'grid-cols-2' : 'grid-cols-1 place-items-center'}`}>
+              {srtFiles.map((f) => (
+                <div key={f.srtFileName} className="flex flex-col items-center gap-3">
+                  <div className="bg-white rounded-xl p-3">
+                    <QRCodeSVG
+                      value={`${window.location.origin}${f.downloadUrl}`}
+                      size={qrSize}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 text-center max-w-[160px] truncate">{f.srtFileName}</p>
+                  <a
+                    href={`${window.location.origin}${f.downloadUrl}`}
+                    download={f.srtFileName}
+                    className="flex items-center gap-1.5 text-xs font-semibold border border-[#22c55e] text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors px-4 py-2 rounded-lg"
+                  >
+                    <Download size={12} />
+                    Download .srt
+                  </a>
+                </div>
+              ))}
             </div>
-            <button
-              onClick={downloadSrt}
-              className="flex items-center gap-2 w-full justify-center py-2.5 rounded-xl text-sm font-semibold border border-[#22c55e] text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
-            >
-              <Download size={16} />
-              Download {result.srtFileName}
-            </button>
-            <p className="text-xs text-gray-500">File auto-deletes after download or in 10 minutes</p>
+
+            <p className="text-xs text-gray-600">Files auto-delete after download or in 15 minutes</p>
           </div>
         </div>
       )}

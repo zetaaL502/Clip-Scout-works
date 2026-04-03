@@ -2,82 +2,29 @@ import { Router, json as expressJson } from "express";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import ffmpeg from "fluent-ffmpeg";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-const FFMPEG_PATH =
-  process.env.FFMPEG_PATH ??
-  "/nix/store/hnz1kx9gfqclrfydrk835zib87ah56s6-replit-runtime-path/bin/ffmpeg";
-if (fs.existsSync(FFMPEG_PATH)) {
-  ffmpeg.setFfmpegPath(FFMPEG_PATH);
-}
-
-
-const GROQ_API_BASE = "https://api.groq.com/openai/v1";
-const CLEANUP_TIMEOUT_MS = 10 * 60 * 1000;
-
-const LANGUAGES: Record<string, string> = {
-  english: "English",
-  spanish: "Spanish",
-  hindi: "Hindi",
-  french: "French",
-  german: "German",
-  portuguese: "Portuguese",
-  japanese: "Japanese",
-  chinese: "Chinese",
-  arabic: "Arabic",
-  korean: "Korean",
-};
-
-function toSrt(segments: Array<{ start: number; end: number; text: string }>): string {
-  return segments
-    .map((seg, i) => {
-      const fmt = (s: number) => {
-        const ms = Math.round((s % 1) * 1000);
-        const totalSec = Math.floor(s);
-        const sec = totalSec % 60;
-        const min = Math.floor(totalSec / 60) % 60;
-        const hr = Math.floor(totalSec / 3600);
-        return `${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
-      };
-      return `${i + 1}\n${fmt(seg.start)} --> ${fmt(seg.end)}\n${seg.text.trim()}\n`;
-    })
-    .join("\n");
-}
+const ASSEMBLYAI_API = "https://api.assemblyai.com/v2";
+const CLEANUP_TIMEOUT_MS = 15 * 60 * 1000;
 
 function scheduleCleanup(filePath: string) {
   setTimeout(() => { fs.unlink(filePath, () => {}); }, CLEANUP_TIMEOUT_MS);
 }
 
-function compressToMp3(inputPath: string, outputPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .audioFrequency(16000)
-      .audioChannels(1)
-      .audioBitrate("64k")
-      .toFormat("mp3")
-      .on("error", (err) => { logger.error({ err }, "ffmpeg compression failed"); reject(err); })
-      .on("end", () => resolve())
-      .save(outputPath);
-  });
-}
-
-// --- Chunk upload route ---
-// Accepts base64-encoded chunk as JSON (avoids proxy multipart limits)
+// --- Chunk upload (same chunked JSON/base64 approach to bypass proxy limits) ---
 router.post("/subtitles/chunk", expressJson({ limit: "128kb" }), (req, res) => {
   const { sessionId, chunkIndex, totalChunks, data } = req.body as Record<string, string | number>;
   if (!sessionId || chunkIndex === undefined || !totalChunks || !data) {
     res.status(400).json({ error: "Missing sessionId, chunkIndex, totalChunks, or data." });
     return;
   }
-
   try {
     const chunkBuffer = Buffer.from(data as string, "base64");
     const destPath = path.join(os.tmpdir(), `chunk-${sessionId}-${chunkIndex}`);
     fs.writeFileSync(destPath, chunkBuffer);
-    logger.info({ sessionId, chunkIndex, totalChunks, bytes: chunkBuffer.byteLength }, "Chunk received");
+    logger.info({ sessionId, chunkIndex, bytes: chunkBuffer.byteLength }, "Chunk received");
     res.json({ ok: true, chunkIndex });
   } catch (err) {
     logger.error({ err }, "Failed to write chunk");
@@ -85,111 +32,122 @@ router.post("/subtitles/chunk", expressJson({ limit: "128kb" }), (req, res) => {
   }
 });
 
-// --- Assemble + process route ---
-router.post("/subtitles/process-chunks", async (req, res) => {
-  const apiKey = process.env["GROQ_API_KEY"];
+// --- Process up to 5 sessions in parallel via AssemblyAI ---
+router.post("/subtitles/process-many", expressJson({ limit: "10kb" }), async (req, res) => {
+  const apiKey = process.env["ASSEMBLYAI_API_KEY"];
   if (!apiKey) {
-    res.status(502).json({ error: "GROQ_API_KEY not configured on server." });
+    res.status(502).json({ error: "ASSEMBLYAI_API_KEY not configured on server." });
     return;
   }
 
-  const { sessionId, totalChunks, language } = req.body as Record<string, string>;
-  if (!sessionId || !totalChunks) {
-    res.status(400).json({ error: "Missing sessionId or totalChunks." });
+  const { sessions, language } = req.body as {
+    sessions: Array<{ sessionId: string; totalChunks: string | number; originalName: string }>;
+    language?: string;
+  };
+
+  if (!Array.isArray(sessions) || sessions.length === 0 || sessions.length > 5) {
+    res.status(400).json({ error: "Provide between 1 and 5 sessions." });
     return;
   }
-
-  const total = Number(totalChunks);
-  const lang = language ?? "english";
-  const languageName = LANGUAGES[lang] ?? "English";
-  const isEnglish = lang === "english";
-
-  const assembledPath = path.join(os.tmpdir(), `assembled-${sessionId}.wav`);
-  let compressedPath: string | null = null;
 
   try {
-    // Assemble chunks
-    logger.info({ sessionId, total }, "Assembling chunks...");
-    const writeStream = fs.createWriteStream(assembledPath);
-    for (let i = 0; i < total; i++) {
-      const chunkPath = path.join(os.tmpdir(), `chunk-${sessionId}-${i}`);
-      if (!fs.existsSync(chunkPath)) {
-        res.status(400).json({ error: `Missing chunk ${i}` });
-        writeStream.destroy();
-        return;
-      }
-      const data = fs.readFileSync(chunkPath);
-      writeStream.write(data);
-      fs.unlinkSync(chunkPath);
-    }
-    await new Promise<void>((resolve, reject) => {
-      writeStream.end();
-      writeStream.on("finish", resolve);
-      writeStream.on("error", reject);
-    });
+    const srtFiles = await Promise.all(
+      sessions.map(async ({ sessionId, totalChunks, originalName }) => {
+        const total = Number(totalChunks);
 
-    // Compress assembled file to MP3 to reduce Groq upload size
-    logger.info("Compressing assembled audio to MP3...");
-    compressedPath = path.join(os.tmpdir(), `compressed-${sessionId}.mp3`);
-    await compressToMp3(assembledPath, compressedPath);
-    fs.unlinkSync(assembledPath);
+        // 1. Assemble chunks from disk
+        const assembledPath = path.join(os.tmpdir(), `assembled-${sessionId}`);
+        const writeStream = fs.createWriteStream(assembledPath);
+        for (let i = 0; i < total; i++) {
+          const chunkPath = path.join(os.tmpdir(), `chunk-${sessionId}-${i}`);
+          if (!fs.existsSync(chunkPath)) {
+            writeStream.destroy();
+            throw new Error(`Missing chunk ${i} for "${originalName}"`);
+          }
+          writeStream.write(fs.readFileSync(chunkPath));
+          fs.unlinkSync(chunkPath);
+        }
+        await new Promise<void>((resolve, reject) => {
+          writeStream.end();
+          writeStream.on("finish", resolve);
+          writeStream.on("error", reject);
+        });
 
-    const compressedSizeMB = fs.statSync(compressedPath).size / (1024 * 1024);
-    logger.info({ compressedSizeMB: compressedSizeMB.toFixed(2) }, "Sending to Groq Whisper...");
+        // 2. Upload assembled file to AssemblyAI
+        logger.info({ sessionId, originalName }, "Uploading to AssemblyAI...");
+        const fileBuffer = fs.readFileSync(assembledPath);
+        fs.unlinkSync(assembledPath);
 
-    const endpoint = isEnglish
-      ? `${GROQ_API_BASE}/audio/translations`
-      : `${GROQ_API_BASE}/audio/transcriptions`;
+        const uploadRes = await fetch(`${ASSEMBLYAI_API}/upload`, {
+          method: "POST",
+          headers: { Authorization: apiKey, "Content-Type": "application/octet-stream" },
+          body: fileBuffer,
+        });
+        if (!uploadRes.ok) {
+          throw new Error(`AssemblyAI upload failed (${uploadRes.status}): ${await uploadRes.text()}`);
+        }
+        const { upload_url } = await uploadRes.json() as { upload_url: string };
 
-    const audioBuffer = fs.readFileSync(compressedPath);
-    const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
-    formData.append("file", blob, `audio-${Date.now()}.mp3`);
-    formData.append("model", "whisper-large-v3");
-    formData.append("response_format", "verbose_json");
-    if (!isEnglish) formData.append("language", lang);
+        // 3. Submit transcription job
+        const txBody: Record<string, string> = { audio_url: upload_url };
+        if (language && language !== "english") txBody.language_code = language;
+        const txRes = await fetch(`${ASSEMBLYAI_API}/transcript`, {
+          method: "POST",
+          headers: { Authorization: apiKey, "Content-Type": "application/json" },
+          body: JSON.stringify(txBody),
+        });
+        if (!txRes.ok) {
+          throw new Error(`AssemblyAI transcript create failed (${txRes.status}): ${await txRes.text()}`);
+        }
+        const { id } = await txRes.json() as { id: string };
+        logger.info({ id, originalName }, "Transcript job submitted, polling...");
 
-    const groqRes = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-    });
+        // 4. Poll until complete (max 10 minutes)
+        const deadline = Date.now() + 10 * 60 * 1000;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 4000));
+          const poll = await fetch(`${ASSEMBLYAI_API}/transcript/${id}`, {
+            headers: { Authorization: apiKey },
+          });
+          const pollData = await poll.json() as { status: string; error?: string };
+          if (pollData.status === "completed") break;
+          if (pollData.status === "error") {
+            throw new Error(`AssemblyAI error for "${originalName}": ${pollData.error ?? "unknown"}`);
+          }
+          logger.info({ id, status: pollData.status }, "Polling...");
+        }
 
-    if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      logger.error({ status: groqRes.status, errText }, "Groq API returned error");
-      res.status(502).json({ error: `Groq error (${groqRes.status}): ${errText}` });
-      return;
-    }
+        // 5. Fetch SRT
+        const srtRes = await fetch(`${ASSEMBLYAI_API}/transcript/${id}/srt`, {
+          headers: { Authorization: apiKey },
+        });
+        if (!srtRes.ok) {
+          throw new Error(`SRT fetch failed (${srtRes.status}) for "${originalName}"`);
+        }
+        const srtContent = await srtRes.text();
 
-    const groqData = (await groqRes.json()) as {
-      text: string;
-      segments?: Array<{ start: number; end: number; text: string }>;
-    };
+        const baseName = originalName.replace(/\.[^/.]+$/, "");
+        const srtFileName = `${baseName}-${Date.now()}.srt`;
+        const srtPath = path.join(os.tmpdir(), srtFileName);
+        fs.writeFileSync(srtPath, srtContent, "utf8");
+        scheduleCleanup(srtPath);
 
-    const segments = groqData.segments ?? [];
-    const srtContent = segments.length > 0 ? toSrt(segments) : groqData.text;
-    const srtFileName = `${languageName}-${Date.now()}.srt`;
-    const srtPath = path.join(os.tmpdir(), srtFileName);
-    fs.writeFileSync(srtPath, srtContent, "utf8");
-    scheduleCleanup(srtPath);
+        logger.info({ srtFileName }, "SRT ready");
+        return {
+          srtFileName,
+          downloadUrl: `/api/subtitles/download/${encodeURIComponent(srtFileName)}`,
+        };
+      }),
+    );
 
-    logger.info({ srtFileName }, "Done — subtitle file ready");
-    res.json({
-      transcript: groqData.text,
-      srtFileName,
-      downloadUrl: `/api/subtitles/download/${encodeURIComponent(srtFileName)}`,
-    });
+    res.json({ srtFiles });
   } catch (err) {
-    logger.error({ err }, "Subtitle processing failed");
+    logger.error({ err }, "process-many failed");
     res.status(500).json({ error: `Processing failed: ${err instanceof Error ? err.message : String(err)}` });
-  } finally {
-    if (compressedPath) fs.unlink(compressedPath, () => {});
-    if (fs.existsSync(assembledPath)) fs.unlink(assembledPath, () => {});
   }
 });
 
-// --- Download route ---
+// --- SRT download ---
 router.get("/subtitles/download/:filename", (req, res) => {
   const filename = path.basename(req.params.filename);
   const filePath = path.join(os.tmpdir(), filename);
