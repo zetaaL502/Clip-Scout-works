@@ -10,8 +10,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@types/fluent-ffmpeg": "^2.1.28",
-    "@types/multer": "^2.1.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/integrations-gemini-ai": "workspace:*",
     "archiver": "^7.0.1",
@@ -30,6 +28,8 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "@types/multer": "^2.1.0",
     "@types/node": "^20.19.0",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
