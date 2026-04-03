@@ -61,3 +61,8 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+AI_INTEGRATIONS_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com"
