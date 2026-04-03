@@ -1,22 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 
-if (!process.env.AI_INTEGRATIONS_GEMINI_BASE_URL) {
+// Accept either Replit integration vars OR a plain GEMINI_API_KEY (for Railway / self-hosted)
+const apiKey =
+  process.env.AI_INTEGRATIONS_GEMINI_API_KEY ||
+  process.env.GEMINI_API_KEY;
+
+if (!apiKey) {
   throw new Error(
-    "AI_INTEGRATIONS_GEMINI_BASE_URL must be set. Set it to https://generativelanguage.googleapis.com and provide AI_INTEGRATIONS_GEMINI_API_KEY.",
+    "Gemini API key not found. Set AI_INTEGRATIONS_GEMINI_API_KEY (Replit) or GEMINI_API_KEY (Railway/self-hosted).",
   );
 }
 
-if (!process.env.AI_INTEGRATIONS_GEMINI_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_GEMINI_API_KEY must be set.",
-  );
-}
-
-const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com";
 const isStandardGoogleApi = baseUrl.includes("generativelanguage.googleapis.com");
 
 export const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
+  apiKey,
   ...(isStandardGoogleApi
     ? {}
     : {
