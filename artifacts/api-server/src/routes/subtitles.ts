@@ -17,7 +17,7 @@ if (fs.existsSync(FFMPEG_PATH)) {
 
 const upload = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per chunk
 });
 
 const GROQ_API_BASE = "https://api.groq.com/openai/v1";
@@ -53,9 +53,7 @@ function toSrt(segments: Array<{ start: number; end: number; text: string }>): s
 }
 
 function scheduleCleanup(filePath: string) {
-  setTimeout(() => {
-    fs.unlink(filePath, () => {});
-  }, CLEANUP_TIMEOUT_MS);
+  setTimeout(() => { fs.unlink(filePath, () => {}); }, CLEANUP_TIMEOUT_MS);
 }
 
 function compressToMp3(inputPath: string, outputPath: string): Promise<void> {
@@ -63,70 +61,97 @@ function compressToMp3(inputPath: string, outputPath: string): Promise<void> {
     ffmpeg(inputPath)
       .audioFrequency(16000)
       .audioChannels(1)
-      .audioBitrate("128k")
+      .audioBitrate("64k")
       .toFormat("mp3")
-      .on("error", (err) => {
-        logger.error({ err }, "ffmpeg compression failed");
-        reject(err);
-      })
+      .on("error", (err) => { logger.error({ err }, "ffmpeg compression failed"); reject(err); })
       .on("end", () => resolve())
       .save(outputPath);
   });
 }
 
-router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
+// --- Chunk upload route ---
+// Accepts a single binary chunk and saves it to /tmp
+router.post("/subtitles/chunk", upload.single("chunk"), (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: "No chunk provided." });
+    return;
+  }
+  const { sessionId, chunkIndex, totalChunks } = req.body as Record<string, string>;
+  if (!sessionId || chunkIndex === undefined || !totalChunks) {
+    res.status(400).json({ error: "Missing sessionId, chunkIndex, or totalChunks." });
+    return;
+  }
+
+  const destPath = path.join(os.tmpdir(), `chunk-${sessionId}-${chunkIndex}`);
+  fs.renameSync(req.file.path, destPath);
+
+  logger.info({ sessionId, chunkIndex, totalChunks }, "Chunk received");
+  res.json({ ok: true, chunkIndex });
+});
+
+// --- Assemble + process route ---
+router.post("/subtitles/process-chunks", async (req, res) => {
   const apiKey = process.env["GROQ_API_KEY"];
   if (!apiKey) {
     res.status(502).json({ error: "GROQ_API_KEY not configured on server." });
     return;
   }
 
-  if (!req.file) {
-    res.status(400).json({ error: "No audio file provided." });
+  const { sessionId, totalChunks, language } = req.body as Record<string, string>;
+  if (!sessionId || !totalChunks) {
+    res.status(400).json({ error: "Missing sessionId or totalChunks." });
     return;
   }
 
-  const language: string = (req.body.language as string | undefined) ?? "english";
-  const languageName = LANGUAGES[language] ?? "English";
-  const isEnglish = language === "english";
+  const total = Number(totalChunks);
+  const lang = language ?? "english";
+  const languageName = LANGUAGES[lang] ?? "English";
+  const isEnglish = lang === "english";
 
-  const originalPath = req.file.path;
-  let audioPathToSend = originalPath;
+  const assembledPath = path.join(os.tmpdir(), `assembled-${sessionId}.wav`);
   let compressedPath: string | null = null;
 
   try {
-    const fileSizeMB = req.file.size / (1024 * 1024);
-    const ext = path.extname(req.file.originalname ?? "").toLowerCase();
-    const needsCompression = fileSizeMB > 23 || ext === ".wav" || ext === ".aiff";
-
-    if (needsCompression) {
-      logger.info({ fileSizeMB: fileSizeMB.toFixed(1), ext }, "Step 1: Compressing audio to MP3...");
-      compressedPath = path.join(os.tmpdir(), `compressed-${Date.now()}.mp3`);
-      await compressToMp3(originalPath, compressedPath);
-      fs.unlinkSync(originalPath);
-      audioPathToSend = compressedPath;
-      logger.info("Step 1: Compression done.");
+    // Assemble chunks
+    logger.info({ sessionId, total }, "Assembling chunks...");
+    const writeStream = fs.createWriteStream(assembledPath);
+    for (let i = 0; i < total; i++) {
+      const chunkPath = path.join(os.tmpdir(), `chunk-${sessionId}-${i}`);
+      if (!fs.existsSync(chunkPath)) {
+        res.status(400).json({ error: `Missing chunk ${i}` });
+        writeStream.destroy();
+        return;
+      }
+      const data = fs.readFileSync(chunkPath);
+      writeStream.write(data);
+      fs.unlinkSync(chunkPath);
     }
+    await new Promise<void>((resolve, reject) => {
+      writeStream.end();
+      writeStream.on("finish", resolve);
+      writeStream.on("error", reject);
+    });
 
-    logger.info("Step 2: Sending to Groq Whisper...");
+    // Compress assembled file to MP3 to reduce Groq upload size
+    logger.info("Compressing assembled audio to MP3...");
+    compressedPath = path.join(os.tmpdir(), `compressed-${sessionId}.mp3`);
+    await compressToMp3(assembledPath, compressedPath);
+    fs.unlinkSync(assembledPath);
+
+    const compressedSizeMB = fs.statSync(compressedPath).size / (1024 * 1024);
+    logger.info({ compressedSizeMB: compressedSizeMB.toFixed(2) }, "Sending to Groq Whisper...");
 
     const endpoint = isEnglish
       ? `${GROQ_API_BASE}/audio/translations`
       : `${GROQ_API_BASE}/audio/transcriptions`;
 
-    const audioBuffer = fs.readFileSync(audioPathToSend);
-    const isMp3 = audioPathToSend.endsWith(".mp3") || needsCompression;
-    const sendMime = isMp3 ? "audio/mpeg" : (req.file.mimetype || "audio/mpeg");
-    const sendFilename = isMp3 ? `audio-${Date.now()}.mp3` : (req.file.originalname || "audio.mp3");
-
+    const audioBuffer = fs.readFileSync(compressedPath);
     const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: sendMime });
-    formData.append("file", blob, sendFilename);
+    const blob = new Blob([audioBuffer], { type: "audio/mpeg" });
+    formData.append("file", blob, `audio-${Date.now()}.mp3`);
     formData.append("model", "whisper-large-v3");
     formData.append("response_format", "verbose_json");
-    if (!isEnglish) {
-      formData.append("language", language);
-    }
+    if (!isEnglish) formData.append("language", lang);
 
     const groqRes = await fetch(endpoint, {
       method: "POST",
@@ -146,7 +171,6 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
       segments?: Array<{ start: number; end: number; text: string }>;
     };
 
-    logger.info("Step 3: Generating SRT...");
     const segments = groqData.segments ?? [];
     const srtContent = segments.length > 0 ? toSrt(segments) : groqData.text;
     const srtFileName = `${languageName}-${Date.now()}.srt`;
@@ -155,7 +179,6 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
     scheduleCleanup(srtPath);
 
     logger.info({ srtFileName }, "Done — subtitle file ready");
-
     res.json({
       transcript: groqData.text,
       srtFileName,
@@ -165,26 +188,21 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
     logger.error({ err }, "Subtitle processing failed");
     res.status(500).json({ error: `Processing failed: ${err instanceof Error ? err.message : String(err)}` });
   } finally {
-    fs.unlink(audioPathToSend, () => {});
-    if (compressedPath && audioPathToSend !== compressedPath) {
-      fs.unlink(compressedPath, () => {});
-    }
+    if (compressedPath) fs.unlink(compressedPath, () => {});
+    if (fs.existsSync(assembledPath)) fs.unlink(assembledPath, () => {});
   }
 });
 
+// --- Download route ---
 router.get("/subtitles/download/:filename", (req, res) => {
   const filename = path.basename(req.params.filename);
   const filePath = path.join(os.tmpdir(), filename);
-
   if (!fs.existsSync(filePath)) {
     res.status(404).json({ error: "File not found or already downloaded." });
     return;
   }
-
   res.download(filePath, filename, (err) => {
-    if (!err) {
-      fs.unlink(filePath, () => {});
-    }
+    if (!err) fs.unlink(filePath, () => {});
   });
 });
 
