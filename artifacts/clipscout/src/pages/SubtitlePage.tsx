@@ -15,7 +15,7 @@ const LANGUAGES = [
   { value: 'korean', label: 'Korean' },
 ];
 
-const CHUNK_SIZE = 200 * 1024; // 200KB per chunk — safely under Replit proxy limits
+const CHUNK_SIZE = 50 * 1024; // 50KB binary per chunk → ~68KB base64 JSON body — safely under all proxy limits
 
 type Step = 'idle' | 'compressing' | 'uploading' | 'processing' | 'done' | 'error';
 
@@ -76,7 +76,7 @@ async function compressInBrowser(file: File): Promise<ArrayBuffer> {
   return writeWavHeader(int16.buffer, TARGET_RATE);
 }
 
-// --- Chunked upload ---
+// --- Chunked upload (JSON + base64 to avoid proxy multipart limits) ---
 async function uploadInChunks(
   data: ArrayBuffer,
   sessionId: string,
@@ -85,13 +85,16 @@ async function uploadInChunks(
   const total = Math.ceil(data.byteLength / CHUNK_SIZE);
   for (let i = 0; i < total; i++) {
     const start = i * CHUNK_SIZE;
-    const chunk = data.slice(start, start + CHUNK_SIZE);
-    const form = new FormData();
-    form.append('chunk', new Blob([chunk], { type: 'application/octet-stream' }), 'chunk.bin');
-    form.append('sessionId', sessionId);
-    form.append('chunkIndex', String(i));
-    form.append('totalChunks', String(total));
-    const res = await fetch('/api/subtitles/chunk', { method: 'POST', body: form });
+    const chunkBytes = new Uint8Array(data, start, Math.min(CHUNK_SIZE, data.byteLength - start));
+    // encode binary → base64 string
+    let binary = '';
+    for (let j = 0; j < chunkBytes.byteLength; j++) binary += String.fromCharCode(chunkBytes[j]);
+    const b64 = btoa(binary);
+    const res = await fetch('/api/subtitles/chunk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, chunkIndex: i, totalChunks: total, data: b64 }),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error((err as { error?: string }).error ?? 'Chunk upload failed');

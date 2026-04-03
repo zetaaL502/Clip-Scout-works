@@ -1,5 +1,4 @@
-import { Router } from "express";
-import multer from "multer";
+import { Router, json as expressJson } from "express";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,10 +14,6 @@ if (fs.existsSync(FFMPEG_PATH)) {
   ffmpeg.setFfmpegPath(FFMPEG_PATH);
 }
 
-const upload = multer({
-  dest: os.tmpdir(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per chunk
-});
 
 const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 const CLEANUP_TIMEOUT_MS = 10 * 60 * 1000;
@@ -70,23 +65,24 @@ function compressToMp3(inputPath: string, outputPath: string): Promise<void> {
 }
 
 // --- Chunk upload route ---
-// Accepts a single binary chunk and saves it to /tmp
-router.post("/subtitles/chunk", upload.single("chunk"), (req, res) => {
-  if (!req.file) {
-    res.status(400).json({ error: "No chunk provided." });
-    return;
-  }
-  const { sessionId, chunkIndex, totalChunks } = req.body as Record<string, string>;
-  if (!sessionId || chunkIndex === undefined || !totalChunks) {
-    res.status(400).json({ error: "Missing sessionId, chunkIndex, or totalChunks." });
+// Accepts base64-encoded chunk as JSON (avoids proxy multipart limits)
+router.post("/subtitles/chunk", expressJson({ limit: "128kb" }), (req, res) => {
+  const { sessionId, chunkIndex, totalChunks, data } = req.body as Record<string, string | number>;
+  if (!sessionId || chunkIndex === undefined || !totalChunks || !data) {
+    res.status(400).json({ error: "Missing sessionId, chunkIndex, totalChunks, or data." });
     return;
   }
 
-  const destPath = path.join(os.tmpdir(), `chunk-${sessionId}-${chunkIndex}`);
-  fs.renameSync(req.file.path, destPath);
-
-  logger.info({ sessionId, chunkIndex, totalChunks }, "Chunk received");
-  res.json({ ok: true, chunkIndex });
+  try {
+    const chunkBuffer = Buffer.from(data as string, "base64");
+    const destPath = path.join(os.tmpdir(), `chunk-${sessionId}-${chunkIndex}`);
+    fs.writeFileSync(destPath, chunkBuffer);
+    logger.info({ sessionId, chunkIndex, totalChunks, bytes: chunkBuffer.byteLength }, "Chunk received");
+    res.json({ ok: true, chunkIndex });
+  } catch (err) {
+    logger.error({ err }, "Failed to write chunk");
+    res.status(500).json({ error: "Failed to write chunk." });
+  }
 });
 
 // --- Assemble + process route ---
