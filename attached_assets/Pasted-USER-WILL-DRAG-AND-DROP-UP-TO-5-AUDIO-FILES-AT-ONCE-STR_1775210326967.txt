@@ -1,0 +1,46 @@
+USER WILL DRAG AND DROP UP TO 5 AUDIO FILES AT ONCE.
+
+STRICT BEHAVIOR (follow exactly, no exceptions):
+
+1. When user drags and drops 5 (or fewer) audio files:
+   - DO NOT start processing anything immediately.
+   - Display each audio file in its own clear box/section like this:
+[ ] Audio 1: filename.mp3   ← checkbox
+Input language: [auto-detect or let user choose]
+Output language: [user must select: English / Spanish / Nepali / Hindi / etc.]
+text- Show a big button at the bottom: "✅ Tick all boxes and click START to begin processing"
+- Only when user has ticked the checkbox for every audio AND types "start" or clicks the START button, then begin processing.
+
+2. Processing rules (to completely fix "too many requests please slow down"):
+- Process ONE audio at a time only (never parallel).
+- After finishing the full SRT for one audio, simulate a pause of 10-15 seconds before starting the next audio.
+- Use AssemblyAI API for transcription and subtitle generation.
+- Never send multiple API calls at the same time.
+
+3. For each audio:
+- Let user select the output language (English, Spanish, Nepali, Hindi, etc.).
+- Generate a perfect SRT file.
+- Name the file exactly according to the language the user selected:
+Example: english.srt   OR   spanish.srt   OR   nepali.srt   OR   hindi.srt
+(Use lowercase, no spaces, only the language name + .srt)
+- Show the SRT content clearly.
+- Provide it as an individual downloadable file/button.
+
+4. After ALL 5 SRT files are completely generated:
+- First, show 5 separate individual download buttons/links:
+- Download english.srt
+- Download spanish.srt
+- etc.
+- ONLY THEN display ONE big scannable QR code.
+- The QR code must contain direct download links for all 5 SRT files so that when I scan it with my phone, all 5 files download automatically to my phone (Chrome on mobile will not interrupt because max is 5).
+- Label the QR clearly: "Scan with phone to download all 5 SRT files"
+
+5. Important:
+- Never mix files or languages.
+- Never process until every checkbox is ticked and user says "start".
+- Double-check every SRT for correct timestamps (HH:MM:SS,mmm format), proper numbering, and accurate transcription/translation.
+- If any rate limit appears, automatically pause 20 seconds and continue with the next audio only.
+
+I am now going to drag and drop my audio files.
+Show me the 5 boxes with checkboxes and language selectors immediately.
+Do not process anything until I tick all boxes and type "start".
