@@ -8,7 +8,9 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-const FFMPEG_PATH = process.env.FFMPEG_PATH ?? "/nix/store/hnz1kx9gfqclrfydrk835zib87ah56s6-replit-runtime-path/bin/ffmpeg";
+const FFMPEG_PATH =
+  process.env.FFMPEG_PATH ??
+  "/nix/store/hnz1kx9gfqclrfydrk835zib87ah56s6-replit-runtime-path/bin/ffmpeg";
 if (fs.existsSync(FFMPEG_PATH)) {
   ffmpeg.setFfmpegPath(FFMPEG_PATH);
 }
@@ -52,23 +54,22 @@ function toSrt(segments: Array<{ start: number; end: number; text: string }>): s
 
 function scheduleCleanup(filePath: string) {
   setTimeout(() => {
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== "ENOENT") {
-        logger.warn({ filePath }, "Orphaned file cleanup failed");
-      }
-    });
+    fs.unlink(filePath, () => {});
   }, CLEANUP_TIMEOUT_MS);
 }
 
-function compressAudio(inputPath: string, outputPath: string): Promise<void> {
+function compressToMp3(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .audioFrequency(16000)
       .audioChannels(1)
       .audioBitrate("128k")
       .toFormat("mp3")
-      .on("error", reject)
-      .on("end", resolve)
+      .on("error", (err) => {
+        logger.error({ err }, "ffmpeg compression failed");
+        reject(err);
+      })
+      .on("end", () => resolve())
       .save(outputPath);
   });
 }
@@ -89,29 +90,38 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
   const languageName = LANGUAGES[language] ?? "English";
   const isEnglish = language === "english";
 
-  let audioPath = req.file.path;
+  const originalPath = req.file.path;
+  let audioPathToSend = originalPath;
   let compressedPath: string | null = null;
 
   try {
     const fileSizeMB = req.file.size / (1024 * 1024);
-    if (fileSizeMB > 24) {
-      logger.info({ fileSizeMB: fileSizeMB.toFixed(1) }, "Step 1: Compressing audio...");
+    const ext = path.extname(req.file.originalname ?? "").toLowerCase();
+    const needsCompression = fileSizeMB > 23 || ext === ".wav" || ext === ".aiff";
+
+    if (needsCompression) {
+      logger.info({ fileSizeMB: fileSizeMB.toFixed(1), ext }, "Step 1: Compressing audio to MP3...");
       compressedPath = path.join(os.tmpdir(), `compressed-${Date.now()}.mp3`);
-      await compressAudio(audioPath, compressedPath);
-      fs.unlinkSync(audioPath);
-      audioPath = compressedPath;
+      await compressToMp3(originalPath, compressedPath);
+      fs.unlinkSync(originalPath);
+      audioPathToSend = compressedPath;
+      logger.info("Step 1: Compression done.");
     }
 
-    logger.info("Step 2: Transcribing with Groq Whisper...");
+    logger.info("Step 2: Sending to Groq Whisper...");
 
     const endpoint = isEnglish
       ? `${GROQ_API_BASE}/audio/translations`
       : `${GROQ_API_BASE}/audio/transcriptions`;
 
+    const audioBuffer = fs.readFileSync(audioPathToSend);
+    const isMp3 = audioPathToSend.endsWith(".mp3") || needsCompression;
+    const sendMime = isMp3 ? "audio/mpeg" : (req.file.mimetype || "audio/mpeg");
+    const sendFilename = isMp3 ? `audio-${Date.now()}.mp3` : (req.file.originalname || "audio.mp3");
+
     const formData = new FormData();
-    const audioBuffer = fs.readFileSync(audioPath);
-    const blob = new Blob([audioBuffer], { type: req.file.mimetype || "audio/mpeg" });
-    formData.append("file", blob, req.file.originalname || "audio.mp3");
+    const blob = new Blob([audioBuffer], { type: sendMime });
+    formData.append("file", blob, sendFilename);
     formData.append("model", "whisper-large-v3");
     formData.append("response_format", "verbose_json");
     if (!isEnglish) {
@@ -126,7 +136,8 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
 
     if (!groqRes.ok) {
       const errText = await groqRes.text();
-      res.status(502).json({ error: `Groq API error: ${errText}` });
+      logger.error({ status: groqRes.status, errText }, "Groq API returned error");
+      res.status(502).json({ error: `Groq error (${groqRes.status}): ${errText}` });
       return;
     }
 
@@ -137,12 +148,13 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
 
     logger.info("Step 3: Generating SRT...");
     const segments = groqData.segments ?? [];
-    const srtContent = toSrt(segments);
+    const srtContent = segments.length > 0 ? toSrt(segments) : groqData.text;
     const srtFileName = `${languageName}-${Date.now()}.srt`;
     const srtPath = path.join(os.tmpdir(), srtFileName);
     fs.writeFileSync(srtPath, srtContent, "utf8");
-
     scheduleCleanup(srtPath);
+
+    logger.info({ srtFileName }, "Done — subtitle file ready");
 
     res.json({
       transcript: groqData.text,
@@ -150,10 +162,13 @@ router.post("/subtitles/process", upload.single("audio"), async (req, res) => {
       downloadUrl: `/api/subtitles/download/${encodeURIComponent(srtFileName)}`,
     });
   } catch (err) {
-    logger.error(err, "Subtitle processing failed");
-    res.status(500).json({ error: "Processing failed. Check server logs." });
+    logger.error({ err }, "Subtitle processing failed");
+    res.status(500).json({ error: `Processing failed: ${err instanceof Error ? err.message : String(err)}` });
   } finally {
-    fs.unlink(audioPath, () => {});
+    fs.unlink(audioPathToSend, () => {});
+    if (compressedPath && audioPathToSend !== compressedPath) {
+      fs.unlink(compressedPath, () => {});
+    }
   }
 });
 
