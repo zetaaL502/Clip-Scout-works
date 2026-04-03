@@ -1,4 +1,4 @@
-import { Film, Send } from 'lucide-react';
+import { Film, Send, Mic } from 'lucide-react';
 import type { Page } from '../types';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
 const navItems = [
   { id: 'home' as Page, label: 'Video Studio', icon: Film },
   { id: 'quicksend' as Page, label: 'Quick Send', icon: Send },
+  { id: 'subtitles' as Page, label: 'Subtitles', icon: Mic },
 ];
 
 export function AppSidebar({ currentPage, onNavigate }: Props) {

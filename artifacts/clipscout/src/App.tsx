@@ -6,6 +6,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { HomePage } from './pages/HomePage';
 import { GridPage } from './pages/GridPage';
 import { QuickSendPage } from './pages/QuickSendPage';
+import { SubtitlePage } from './pages/SubtitlePage';
 import { AppSidebar } from './components/AppSidebar';
 import { storage } from './storage';
 import type { Page } from './types';
@@ -62,6 +63,7 @@ function AppContent() {
           />
         )}
         {page === 'quicksend' && <QuickSendPage />}
+        {page === 'subtitles' && <SubtitlePage />}
       </div>
     </div>
   );

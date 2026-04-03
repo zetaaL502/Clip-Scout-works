@@ -1,0 +1,91 @@
+MASTER PROMPT: The "Railway-Ready" AI Subtitle SaaS
+
+Role: Expert Full-Stack Node.js/Express Engineer.
+Environment: Development on Windows/Replit, Deployment on Railway.
+Objective: Build a high-performance subtitle generator that processes large files (>25MB) and allows instant mobile downloads via QR code.
+
+1. Build Configuration (CRITICAL for Railway)
+
+nixpacks.toml: You MUST create a nixpacks.toml file in the root directory.
+
+Content: Add ffmpeg and nodejs to the nixPkgs setup. This is the only way Railway will have the tools to compress my 30MB WAV files.
+
+Port: The server must listen on process.env.PORT || 3000.
+
+2. Audio Compression (The "25MB Wall" Fix)
+
+Uploads: Use multer to handle files. Store them in the /tmp/ directory.
+
+Logic: If the file size is > 24MB:
+
+Use fluent-ffmpeg to convert the WAV to MP3.
+
+Settings: 16kHz sampling rate, Mono (1 channel), 128k bitrate.
+
+Immediate Cleanup: Delete the original 30MB WAV as soon as the MP3 is created.
+
+Goal: Ensure Groq only receives files ~3MB in size.
+
+3. Groq API & Multi-Language Logic
+
+Model: whisper-large-v3.
+
+Endpoints:
+
+If user selects "English": Use https://api.groq.com/openai/v1/audio/translations.
+
+If user selects "Native Language" (Spanish, Hindi, etc.): Use https://api.groq.com/openai/v1/audio/transcriptions.
+
+Format: Request response_format: "verbose_json".
+
+Preview: Once the JSON returns, display the full transcription text in a "Live Script Preview" panel on the side of the UI.
+
+4. SRT Generation & Naming
+
+Parser: Convert the Groq segments array into a valid SRT string with standard timestamps (HH:MM:SS,mmm).
+
+Naming: Use the language name for the file (e.g., English.srt or Spanish.srt).
+
+No Watermarks: Ensure the SRT is raw and clean.
+
+5. Mobile QR & "Economy Mode" Cleanup (Save Credits)
+
+QR Code: Use the qrcode library to generate a QR code on the frontend that links to the unique download URL of the SRT.
+
+The Download Route: Create an Express route /download/:filename.
+
+Aggressive Cleanup:
+
+When the user downloads the file, use the res.download callback to immediately delete the SRT file from the server.
+
+Set a setTimeout for 10 minutes to delete any orphaned files in /tmp/ that weren't downloaded.
+
+This ensures my $1 Railway credit lasts as long as possible by keeping storage at 0.
+
+6. UI/UX Requirements
+
+Modern Layout: Side-by-side view.
+
+Left Side: Drag-and-drop upload, language dropdown, and a "Process" button.
+
+Right Side: A scrolling "Script Preview" box that fills up once the AI is done.
+
+Visual Feedback: Show "Step 1: Compressing...", "Step 2: Transcribing...", "Step 3: Generating QR...".
+
+Final State: Display the QR code clearly alongside a "Download to Computer" button.
+
+Final Check for the Agent:
+
+Check for nixpacks.toml: Ensure it is created so the build doesn't fail.
+
+Check for /tmp/ usage: Ensure no files are stored in the root folder (Railway requires /tmp/ for writing).
+
+Check for Error Handling: If Groq returns an error, show it clearly in the UI.
+
+What you need to do after the Agent finishes:
+
+Railway Variables: Once you push to Railway, go to the Variables tab and add GROQ_API_KEY.
+
+The build: Watch the logs to make sure ffmpeg is installing correctly.
+
+The Test: Upload your 30MB WAV. If you see "Compressing..." in the logs, it worked!

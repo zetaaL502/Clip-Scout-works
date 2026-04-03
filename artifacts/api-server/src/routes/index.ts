@@ -4,6 +4,7 @@ import pexelsRouter from "./pexels";
 import analyzeRouter from "./analyze";
 import exportRouter from "./export";
 import transfersRouter from "./transfers";
+import subtitlesRouter from "./subtitles";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(pexelsRouter);
 router.use(analyzeRouter);
 router.use(exportRouter);
 router.use(transfersRouter);
+router.use(subtitlesRouter);
 
 export default router;

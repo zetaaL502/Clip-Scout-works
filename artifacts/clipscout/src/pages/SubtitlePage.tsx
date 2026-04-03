@@ -1,0 +1,286 @@
+import { useState, useRef, useCallback } from 'react';
+import { Upload, FileAudio, Download, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+
+const LANGUAGES = [
+  { value: 'english', label: 'English (Translated)' },
+  { value: 'spanish', label: 'Spanish' },
+  { value: 'hindi', label: 'Hindi' },
+  { value: 'french', label: 'French' },
+  { value: 'german', label: 'German' },
+  { value: 'portuguese', label: 'Portuguese' },
+  { value: 'japanese', label: 'Japanese' },
+  { value: 'chinese', label: 'Chinese' },
+  { value: 'arabic', label: 'Arabic' },
+  { value: 'korean', label: 'Korean' },
+];
+
+type Step = 'idle' | 'compressing' | 'transcribing' | 'generating' | 'done' | 'error';
+
+interface Result {
+  transcript: string;
+  srtFileName: string;
+  downloadUrl: string;
+}
+
+function StepIndicator({ step }: { step: Step }) {
+  const steps = [
+    { id: 'compressing', label: 'Step 1: Compressing' },
+    { id: 'transcribing', label: 'Step 2: Transcribing' },
+    { id: 'generating', label: 'Step 3: Generating SRT' },
+  ];
+
+  const stepOrder: Step[] = ['compressing', 'transcribing', 'generating', 'done'];
+  const currentIndex = stepOrder.indexOf(step);
+
+  return (
+    <div className="flex flex-col gap-2 my-4">
+      {steps.map((s, i) => {
+        const stepIdx = stepOrder.indexOf(s.id as Step);
+        const isDone = currentIndex > stepIdx;
+        const isActive = currentIndex === stepIdx;
+
+        return (
+          <div key={s.id} className="flex items-center gap-2 text-sm">
+            {isDone ? (
+              <CheckCircle size={16} className="text-[#22c55e] shrink-0" />
+            ) : isActive ? (
+              <Loader2 size={16} className="text-[#22c55e] animate-spin shrink-0" />
+            ) : (
+              <div className="w-4 h-4 rounded-full border border-gray-600 shrink-0" />
+            )}
+            <span className={isDone || isActive ? 'text-white' : 'text-gray-500'}>
+              {s.label}
+              {isActive ? '...' : ''}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SubtitlePage() {
+  const [file, setFile] = useState<File | null>(null);
+  const [language, setLanguage] = useState('english');
+  const [step, setStep] = useState<Step>('idle');
+  const [result, setResult] = useState<Result | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (f: File) => {
+    setFile(f);
+    setResult(null);
+    setStep('idle');
+    setErrorMsg('');
+  };
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) handleFile(dropped);
+  }, []);
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => setIsDragging(false);
+
+  const process = async () => {
+    if (!file) return;
+    setErrorMsg('');
+    setResult(null);
+
+    const fileSizeMB = file.size / (1024 * 1024);
+    setStep(fileSizeMB > 24 ? 'compressing' : 'transcribing');
+
+    const form = new FormData();
+    form.append('audio', file);
+    form.append('language', language);
+
+    try {
+      if (fileSizeMB > 24) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      setStep('transcribing');
+
+      const res = await fetch('/api/subtitles/process', {
+        method: 'POST',
+        body: form,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error ?? 'Unknown error');
+      }
+
+      setStep('generating');
+      await new Promise((r) => setTimeout(r, 300));
+
+      const data = (await res.json()) as Result;
+      setResult(data);
+      setStep('done');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong');
+      setStep('error');
+    }
+  };
+
+  const downloadUrl = result
+    ? `${window.location.origin}${result.downloadUrl}`
+    : '';
+
+  const downloadSrt = () => {
+    if (!result) return;
+    const a = document.createElement('a');
+    a.href = result.downloadUrl;
+    a.download = result.srtFileName;
+    a.click();
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      <div className="border-b border-gray-800 px-6 py-4">
+        <h1 className="text-lg font-semibold">AI Subtitle Generator</h1>
+        <p className="text-sm text-gray-400 mt-0.5">Upload audio or video, get an SRT subtitle file instantly</p>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-0 h-[calc(100vh-73px)]">
+        {/* Left panel */}
+        <div className="lg:w-96 shrink-0 border-r border-gray-800 p-6 flex flex-col gap-5 overflow-y-auto">
+
+          {/* Drop zone */}
+          <div
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+            className={`relative border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors text-center
+              ${isDragging ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-gray-700 hover:border-gray-500'}`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*,video/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+              }}
+            />
+            {file ? (
+              <div className="flex flex-col items-center gap-2">
+                <FileAudio size={32} className="text-[#22c55e]" />
+                <p className="text-sm font-medium text-white truncate max-w-[200px]">{file.name}</p>
+                <p className="text-xs text-gray-400">{(file.size / (1024 * 1024)).toFixed(1)} MB</p>
+                <p className="text-xs text-gray-500">Click to change file</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <Upload size={32} className="text-gray-500" />
+                <p className="text-sm font-medium text-gray-300">Drop audio or video file here</p>
+                <p className="text-xs text-gray-500">MP3, WAV, MP4, M4A, and more · Up to 500 MB</p>
+              </div>
+            )}
+          </div>
+
+          {/* Language */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">Output Language</label>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#22c55e] transition-colors"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              "English" uses Whisper translation. All others use native transcription.
+            </p>
+          </div>
+
+          {/* Process button */}
+          <button
+            onClick={process}
+            disabled={!file || (step !== 'idle' && step !== 'done' && step !== 'error')}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[#22c55e] text-black hover:bg-[#16a34a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {step !== 'idle' && step !== 'done' && step !== 'error' ? 'Processing...' : 'Generate Subtitles'}
+          </button>
+
+          {/* Step progress */}
+          {step !== 'idle' && step !== 'error' && (
+            <StepIndicator step={step} />
+          )}
+
+          {/* Error */}
+          {step === 'error' && (
+            <div className="flex items-start gap-2 text-sm text-red-400 bg-red-950/30 border border-red-900/40 rounded-xl p-3">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* QR + Download */}
+          {step === 'done' && result && (
+            <div className="flex flex-col items-center gap-4 pt-2 border-t border-gray-800">
+              <p className="text-xs text-gray-400 text-center">Scan to download on mobile</p>
+              <div className="bg-white p-3 rounded-xl">
+                <QRCodeSVG value={downloadUrl} size={140} />
+              </div>
+              <button
+                onClick={downloadSrt}
+                className="flex items-center gap-2 w-full justify-center py-2.5 rounded-xl text-sm font-semibold border border-[#22c55e] text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors"
+              >
+                <Download size={16} />
+                Download {result.srtFileName}
+              </button>
+              <p className="text-xs text-gray-500 text-center">File auto-deletes after download or in 10 minutes</p>
+            </div>
+          )}
+        </div>
+
+        {/* Right panel — script preview */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="border-b border-gray-800 px-6 py-3 flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-300">Live Script Preview</span>
+            {step === 'done' && (
+              <span className="ml-auto text-xs text-[#22c55e] flex items-center gap-1">
+                <CheckCircle size={12} /> Done
+              </span>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            {!result && step === 'idle' && (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                <FileAudio size={40} className="text-gray-700" />
+                <p className="text-gray-500 text-sm">Your transcript will appear here once processing is complete.</p>
+              </div>
+            )}
+            {(step === 'compressing' || step === 'transcribing' || step === 'generating') && (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                <Loader2 size={32} className="text-[#22c55e] animate-spin" />
+                <p className="text-gray-400 text-sm">
+                  {step === 'compressing' && 'Compressing large file...'}
+                  {step === 'transcribing' && 'Transcribing audio with Whisper...'}
+                  {step === 'generating' && 'Building SRT file...'}
+                </p>
+              </div>
+            )}
+            {result && (
+              <div className="prose prose-invert max-w-none">
+                <p className="text-gray-200 leading-relaxed whitespace-pre-wrap text-sm">{result.transcript}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
