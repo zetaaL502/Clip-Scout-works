@@ -15,7 +15,7 @@ const LANGUAGES = [
   { value: 'korean', label: 'Korean' },
 ];
 
-type Step = 'idle' | 'compressing' | 'transcribing' | 'generating' | 'done' | 'error';
+type Step = 'idle' | 'compressing' | 'uploading' | 'transcribing' | 'generating' | 'done' | 'error';
 
 interface Result {
   transcript: string;
@@ -23,23 +23,82 @@ interface Result {
   downloadUrl: string;
 }
 
+// --- Client-side audio compression via Web Audio API ---
+// Resamples any audio file to 16kHz mono WAV (~3MB for a 30min file)
+function writeWavHeader(buffer: ArrayBuffer, numChannels: number, sampleRate: number): ArrayBuffer {
+  const samples = buffer.byteLength / 2; // 16-bit PCM
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + buffer.byteLength, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, 'data');
+  view.setUint32(40, buffer.byteLength, true);
+  const combined = new Uint8Array(header.byteLength + buffer.byteLength);
+  combined.set(new Uint8Array(header), 0);
+  combined.set(new Uint8Array(buffer), 44);
+  return combined.buffer;
+}
+
+async function compressAudioClientSide(file: File): Promise<File> {
+  const TARGET_SAMPLE_RATE = 16000;
+  const arrayBuffer = await file.arrayBuffer();
+
+  // Decode with the browser's built-in audio decoder
+  const tempCtx = new AudioContext();
+  const decoded = await tempCtx.decodeAudioData(arrayBuffer);
+  await tempCtx.close();
+
+  // Render to offline context at 16kHz mono
+  const numFrames = Math.ceil((decoded.duration * TARGET_SAMPLE_RATE));
+  const offlineCtx = new OfflineAudioContext(1, numFrames, TARGET_SAMPLE_RATE);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offlineCtx.destination);
+  source.start(0);
+  const rendered = await offlineCtx.startRendering();
+
+  // Convert float32 PCM to int16
+  const channelData = rendered.getChannelData(0);
+  const int16 = new Int16Array(channelData.length);
+  for (let i = 0; i < channelData.length; i++) {
+    const s = Math.max(-1, Math.min(1, channelData[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+
+  const wavBuffer = writeWavHeader(int16.buffer, 1, TARGET_SAMPLE_RATE);
+  const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+  return new File([blob], 'compressed.wav', { type: 'audio/wav' });
+}
+
 function StepIndicator({ step }: { step: Step }) {
   const steps = [
-    { id: 'compressing', label: 'Step 1: Compressing' },
-    { id: 'transcribing', label: 'Step 2: Transcribing' },
-    { id: 'generating', label: 'Step 3: Generating SRT' },
+    { id: 'compressing', label: 'Step 1: Compressing in browser' },
+    { id: 'uploading', label: 'Step 2: Uploading' },
+    { id: 'transcribing', label: 'Step 3: Transcribing with AI' },
+    { id: 'generating', label: 'Step 4: Generating SRT' },
   ];
 
-  const stepOrder: Step[] = ['compressing', 'transcribing', 'generating', 'done'];
+  const stepOrder: Step[] = ['compressing', 'uploading', 'transcribing', 'generating', 'done'];
   const currentIndex = stepOrder.indexOf(step);
 
   return (
     <div className="flex flex-col gap-2 my-4">
-      {steps.map((s, i) => {
+      {steps.map((s) => {
         const stepIdx = stepOrder.indexOf(s.id as Step);
         const isDone = currentIndex > stepIdx;
         const isActive = currentIndex === stepIdx;
-
         return (
           <div key={s.id} className="flex items-center gap-2 text-sm">
             {isDone ? (
@@ -50,8 +109,7 @@ function StepIndicator({ step }: { step: Step }) {
               <div className="w-4 h-4 rounded-full border border-gray-600 shrink-0" />
             )}
             <span className={isDone || isActive ? 'text-white' : 'text-gray-500'}>
-              {s.label}
-              {isActive ? '...' : ''}
+              {s.label}{isActive ? '...' : ''}
             </span>
           </div>
         );
@@ -83,11 +141,7 @@ export function SubtitlePage() {
     if (dropped) handleFile(dropped);
   }, []);
 
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
+  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = () => setIsDragging(false);
 
   const process = async () => {
@@ -95,23 +149,26 @@ export function SubtitlePage() {
     setErrorMsg('');
     setResult(null);
 
-    const fileSizeMB = file.size / (1024 * 1024);
-    setStep(fileSizeMB > 24 ? 'compressing' : 'transcribing');
-
-    const form = new FormData();
-    form.append('audio', file);
-    form.append('language', language);
-
     try {
-      if (fileSizeMB > 24) {
-        await new Promise((r) => setTimeout(r, 400));
+      // Always compress in the browser to keep upload size small
+      setStep('compressing');
+      let uploadFile = file;
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 5) {
+        uploadFile = await compressAudioClientSide(file);
       }
-      setStep('transcribing');
+
+      setStep('uploading');
+      const form = new FormData();
+      form.append('audio', uploadFile, uploadFile.name);
+      form.append('language', language);
 
       const res = await fetch('/api/subtitles/process', {
         method: 'POST',
         body: form,
       });
+
+      setStep('transcribing');
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -119,8 +176,6 @@ export function SubtitlePage() {
       }
 
       setStep('generating');
-      await new Promise((r) => setTimeout(r, 300));
-
       const data = (await res.json()) as Result;
       setResult(data);
       setStep('done');
@@ -130,9 +185,7 @@ export function SubtitlePage() {
     }
   };
 
-  const downloadUrl = result
-    ? `${window.location.origin}${result.downloadUrl}`
-    : '';
+  const downloadUrl = result ? `${window.location.origin}${result.downloadUrl}` : '';
 
   const downloadSrt = () => {
     if (!result) return;
@@ -142,11 +195,13 @@ export function SubtitlePage() {
     a.click();
   };
 
+  const isProcessing = step !== 'idle' && step !== 'done' && step !== 'error';
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="border-b border-gray-800 px-6 py-4">
         <h1 className="text-lg font-semibold">AI Subtitle Generator</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Upload audio or video, get an SRT subtitle file instantly</p>
+        <p className="text-sm text-gray-400 mt-0.5">Upload audio or video — compressed in your browser, then transcribed by AI</p>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-0 h-[calc(100vh-73px)]">
@@ -167,10 +222,7 @@ export function SubtitlePage() {
               type="file"
               accept="audio/*,video/*"
               className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-              }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
             />
             {file ? (
               <div className="flex flex-col items-center gap-2">
@@ -183,7 +235,7 @@ export function SubtitlePage() {
               <div className="flex flex-col items-center gap-2">
                 <Upload size={32} className="text-gray-500" />
                 <p className="text-sm font-medium text-gray-300">Drop audio or video file here</p>
-                <p className="text-xs text-gray-500">MP3, WAV, MP4, M4A, and more · Up to 500 MB</p>
+                <p className="text-xs text-gray-500">WAV, MP3, MP4, M4A and more · Any size</p>
               </div>
             )}
           </div>
@@ -201,23 +253,21 @@ export function SubtitlePage() {
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              "English" uses Whisper translation. All others use native transcription.
+              "English" translates everything to English. Others transcribe natively.
             </p>
           </div>
 
           {/* Process button */}
           <button
             onClick={process}
-            disabled={!file || (step !== 'idle' && step !== 'done' && step !== 'error')}
+            disabled={!file || isProcessing}
             className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[#22c55e] text-black hover:bg-[#16a34a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {step !== 'idle' && step !== 'done' && step !== 'error' ? 'Processing...' : 'Generate Subtitles'}
+            {isProcessing ? 'Processing...' : 'Generate Subtitles'}
           </button>
 
           {/* Step progress */}
-          {step !== 'idle' && step !== 'error' && (
-            <StepIndicator step={step} />
-          )}
+          {step !== 'idle' && step !== 'error' && <StepIndicator step={step} />}
 
           {/* Error */}
           {step === 'error' && (
@@ -246,7 +296,7 @@ export function SubtitlePage() {
           )}
         </div>
 
-        {/* Right panel — script preview */}
+        {/* Right panel */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b border-gray-800 px-6 py-3 flex items-center gap-2">
             <span className="text-sm font-medium text-gray-300">Live Script Preview</span>
@@ -263,12 +313,13 @@ export function SubtitlePage() {
                 <p className="text-gray-500 text-sm">Your transcript will appear here once processing is complete.</p>
               </div>
             )}
-            {(step === 'compressing' || step === 'transcribing' || step === 'generating') && (
+            {isProcessing && (
               <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
                 <Loader2 size={32} className="text-[#22c55e] animate-spin" />
                 <p className="text-gray-400 text-sm">
-                  {step === 'compressing' && 'Compressing large file...'}
-                  {step === 'transcribing' && 'Transcribing audio with Whisper...'}
+                  {step === 'compressing' && 'Compressing audio in your browser — no upload needed yet...'}
+                  {step === 'uploading' && 'Uploading compressed file...'}
+                  {step === 'transcribing' && 'Groq Whisper is transcribing your audio...'}
                   {step === 'generating' && 'Building SRT file...'}
                 </p>
               </div>
