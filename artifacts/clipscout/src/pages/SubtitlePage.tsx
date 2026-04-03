@@ -15,7 +15,7 @@ const LANGUAGES = [
   { value: 'korean', label: 'Korean' },
 ];
 
-const CHUNK_SIZE = 900 * 1024; // 900KB per chunk — safely under any proxy limit
+const CHUNK_SIZE = 200 * 1024; // 200KB per chunk — safely under Replit proxy limits
 
 type Step = 'idle' | 'compressing' | 'uploading' | 'processing' | 'done' | 'error';
 
