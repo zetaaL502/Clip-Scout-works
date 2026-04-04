@@ -14,6 +14,15 @@ interface Props {
   onSettings: () => void;
 }
 
+// Extracts the first keyword phrase from a comma-separated pexels_keywords string.
+// The AI now generates 4 comma-separated cinematic phrases; the initial load
+// should only use the first one so the query is focused.
+function firstKeyword(keywords?: string | null): string {
+  const kw = (keywords ?? '').trim();
+  const first = kw.split(',')[0]?.trim() ?? '';
+  return first || kw;
+}
+
 const EXPORT_FILE_TIME_STEP_MS = 60_000;
 
 type ExportProgressUpdater = (current: number, total: number) => void;
@@ -221,7 +230,8 @@ export function GridPage({ onBack, onSettings }: Props) {
         const cached = existingClips[seg.id];
         if (cached && cached.length > 0) return { id: seg.id, clips: cached };
         try {
-          const clips = await fetchPexelsClips(seg, 1);
+          const segWithFirstKeyword = { ...seg, pexels_keywords: firstKeyword(seg.pexels_keywords) };
+          const clips = await fetchPexelsClips(segWithFirstKeyword, 1);
           if (clips.length > 0) {
             storage.addClips(seg.id, clips);
           }
@@ -260,7 +270,8 @@ export function GridPage({ onBack, onSettings }: Props) {
             const cached = existingClips[seg.id];
             if (cached && cached.length > 0) return { id: seg.id, clips: cached };
             try {
-              const clips = await fetchPexelsClips(seg, 1);
+              const segWithFirstKeyword = { ...seg, pexels_keywords: firstKeyword(seg.pexels_keywords) };
+              const clips = await fetchPexelsClips(segWithFirstKeyword, 1);
               if (clips.length > 0) {
                 storage.addClips(seg.id, clips);
               }

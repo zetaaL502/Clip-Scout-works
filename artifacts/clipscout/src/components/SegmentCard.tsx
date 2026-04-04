@@ -86,11 +86,15 @@ export function SegmentCard({
     }, 40000);
 
     try {
-      let newClips = await fetchPexelsClips(segment, 1, controller.signal);
+      // Use only the first keyword phrase for the initial load so the long
+      // comma-separated string doesn't get sent as one giant query to Pexels.
+      const firstKeyword = pexelsKeywordCycles.current[0] ?? segment.pexels_keywords ?? '';
+      const initialSegment = { ...segment, pexels_keywords: firstKeyword };
+      let newClips = await fetchPexelsClips(initialSegment, 1, controller.signal);
 
       if (!controller.signal.aborted && newClips.length === 0) {
-        // Retry once with the first 2 words of the keywords
-        const simplified = (segment.pexels_keywords ?? '')
+        // Retry once with the first 2 words of the first keyword phrase
+        const simplified = firstKeyword
           .split(' ')
           .filter((w) => w.length > 0)
           .slice(0, 2)

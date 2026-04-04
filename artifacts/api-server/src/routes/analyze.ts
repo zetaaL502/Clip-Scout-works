@@ -17,12 +17,22 @@ Segmentation rules:
 - All segments combined must reproduce the ENTIRE script word for word with nothing missing.
 
 For pexels_keywords — STRICT RULES:
-- Write 2–3 words maximum per keyword string.
-- ONLY use broad, generic visual concepts that stock footage websites definitely have.
-- Think: what common B-roll footage would visually represent this scene? NOT the literal topic.
-- GOOD examples: "city skyline", "luxury apartment", "private jet", "airport crowd", "cash money", "desert highway", "skyscraper night", "business meeting", "ocean sunset", "crowd walking", "office work", "highway cars", "mountain landscape", "shopping mall", "restaurant dining"
-- BAD examples: "ultra wealthy expat crisis", "missile strike dubai", "billionaire tax calculation", "geopolitical tension", "economic collapse forecast"
-- If the topic is niche or abstract, find the closest VISUAL equivalent. A segment about taxes? Use "paperwork desk". About war? Use "military soldiers". About wealth? Use "luxury lifestyle".
+Your ONLY job for keywords is to generate 4 extremely high-quality search phrases that will return professional, cinematic, relevant stock video footage that visually matches the exact content of that segment.
+
+Rules for each of the 4 keyword phrases:
+- Keywords must describe ONLY what can be SEEN in a video (visuals, actions, people, objects, environment, camera movement). Never use abstract concepts like "success", "innovation", "AI revolution" — translate them into concrete visuals.
+- Be VERY specific and descriptive (usually 5–12 words per phrase). Best format: [subject] + [action/motion] + [environment/setting] + [lighting/time] + [camera style if it helps].
+- Prioritize footage that looks premium, 4K-ready, clean, professional (cinematic, realistic, high production value).
+- Keywords must be in natural English that real people would type into Pexels search.
+- Always produce video-only keywords (never photos/images).
+- The resulting videos must be easy to trim to 15–30 seconds, so prefer dynamic scenes with movement rather than completely static shots.
+- Keep everything organized and consistent with the segment's topic — no loose or generic matches.
+- Base the first 2 keywords strongly on the FIRST sentence / first main idea / opening words of the segment.
+- Base the last 2 keywords on secondary ideas, synonyms, or alternative visual angles from the rest of the segment.
+
+Format: Output all 4 keyword phrases as a single comma-separated string. Each phrase is separated by a comma.
+GOOD example: "young woman scrolling instagram feed on smartphone in cafe close-up, huge glowing social media algorithm brain made of code and data floating, diverse group of people staring at phone screens in dark room, hands typing on laptop with multiple social media apps open on screen"
+BAD example: "social media, algorithm, phones, people online"
 
 For giphy_keywords:
 - 2–3 words for a fun expressive GIF. Example: "mind blown", "money rain", "shocked face"
@@ -36,7 +46,7 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
     {
       "order_index": 1,
       "text_body": "exact script text for this segment",
-      "pexels_keywords": "city skyline",
+      "pexels_keywords": "young woman scrolling instagram feed on smartphone in cafe close-up, huge glowing social media algorithm brain made of code and data floating, diverse group of people staring at phone screens in dark room, hands typing on laptop with multiple social media apps open on screen",
       "giphy_keywords": "mind blown",
       "duration_estimate": 20
     }
