@@ -1,9 +1,15 @@
 import { Router, type IRouter } from "express";
 import { ai } from "@workspace/integrations-gemini-ai";
+import Groq from "groq-sdk";
 
 const router: IRouter = Router();
 
 const GEMINI_MODEL = "gemini-2.0-flash";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+const groqClient = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
 
 const buildPrompt = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
@@ -56,6 +62,31 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script to segment (cover ALL of it):
 ${script}`;
 
+async function analyzeWithGroq(script: string): Promise<{ segments: unknown[] }> {
+  const completion = await groqClient!.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [{ role: "user", content: buildPrompt(script) }],
+    response_format: { type: "json_object" },
+    temperature: 0.3,
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const parsed = JSON.parse(raw) as { segments?: unknown[] };
+  return { segments: parsed.segments ?? [] };
+}
+
+async function analyzeWithGemini(script: string): Promise<{ segments: unknown[] }> {
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [{ role: "user", parts: [{ text: buildPrompt(script) }] }],
+    config: { responseMimeType: "application/json" },
+  });
+
+  const raw = response.text ?? "{}";
+  const parsed = JSON.parse(raw) as { segments?: unknown[] };
+  return { segments: parsed.segments ?? [] };
+}
+
 router.post("/analyze-script", async (req, res) => {
   const { script } = req.body as { script?: string };
 
@@ -65,33 +96,16 @@ router.post("/analyze-script", async (req, res) => {
   }
 
   try {
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [{ role: "user", parts: [{ text: buildPrompt(script.trim()) }] }],
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+    const result = groqClient
+      ? await analyzeWithGroq(script.trim())
+      : await analyzeWithGemini(script.trim());
 
-    const raw = response.text ?? "{}";
-
-    let parsed: { segments?: unknown[] };
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      req.log.error({ raw }, "Gemini returned invalid JSON");
-      res.status(502).json({ error: "Gemini returned invalid JSON. Please try again." });
-      return;
-    }
-
-    const segments = parsed.segments ?? [];
+    const segments = result.segments;
     if (!Array.isArray(segments) || segments.length === 0) {
-      req.log.warn({ raw }, "Gemini returned empty segments");
-      res.status(502).json({ error: "Gemini returned no segments. Please try again." });
+      res.status(502).json({ error: "AI returned no segments. Please try again." });
       return;
     }
 
-    // Clamp duration_estimate to [15, 30] seconds regardless of what the model returned
     const MIN_DURATION = 15;
     const MAX_DURATION = 30;
     const clamped = segments.map((seg) => {
