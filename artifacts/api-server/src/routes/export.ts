@@ -335,16 +335,7 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
     return;
   }
 
-  // Stitch all per-segment videos into one final master video
-  const masterPath = path.join(jobDir, "master.mp4");
-  if (segmentOutputPaths.length === 1) {
-    await fsp.rename(segmentOutputPaths[0], masterPath);
-  } else {
-    await stitchVideos(segmentOutputPaths, masterPath, jobDir);
-    for (const p of segmentOutputPaths) await fsp.unlink(p).catch(() => {});
-  }
-
-  // Package and deliver via existing QR/download flow — unchanged
+  // Package each segment as a numbered file (001.mp4, 002.mp4, …) — same structure as the existing export flow
   const zipId = randomUUID();
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const zipFilename = `Project_Videos_${timestamp}.zip`;
@@ -356,7 +347,11 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
     output.on("close", resolve);
     archive.on("error", reject);
     archive.pipe(output);
-    archive.file(masterPath, { name: `${ZIP_FOLDER_NAME}/master.mp4` });
+    // Add each segment file as 001.mp4, 002.mp4, … inside the same ZIP folder as the existing export
+    segmentOutputPaths.forEach((segPath, i) => {
+      const filename = String(i + 1).padStart(3, "0") + ".mp4";
+      archive.file(segPath, { name: `${ZIP_FOLDER_NAME}/${filename}` });
+    });
     archive.finalize();
   });
 
