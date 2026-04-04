@@ -4,6 +4,27 @@ import Groq from "groq-sdk";
 const router: IRouter = Router();
 
 const GROQ_MODEL = "llama-3.1-8b-instant";
+const CHUNK_WORD_LIMIT = 400;
+
+function splitIntoChunks(script: string): string[] {
+  const sentences = script.match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) ?? [script];
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let wordCount = 0;
+
+  for (const sentence of sentences) {
+    const words = sentence.trim().split(/\s+/).length;
+    if (wordCount + words > CHUNK_WORD_LIMIT && current.length > 0) {
+      chunks.push(current.join(" ").trim());
+      current = [];
+      wordCount = 0;
+    }
+    current.push(sentence.trim());
+    wordCount += words;
+  }
+  if (current.length > 0) chunks.push(current.join(" ").trim());
+  return chunks.filter((c) => c.length > 0);
+}
 
 const buildPrompt = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
@@ -56,18 +77,34 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script to segment (cover ALL of it):
 ${script}`;
 
-async function analyzeWithGroq(script: string, apiKey: string): Promise<{ segments: unknown[] }> {
-  const client = new Groq({ apiKey });
+async function analyzeChunk(
+  client: Groq,
+  chunk: string,
+): Promise<unknown[]> {
   const completion = await client.chat.completions.create({
     model: GROQ_MODEL,
-    messages: [{ role: "user", content: buildPrompt(script) }],
+    messages: [{ role: "user", content: buildPrompt(chunk) }],
     response_format: { type: "json_object" },
     temperature: 0.3,
+    max_tokens: 4096,
   });
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
   const parsed = JSON.parse(raw) as { segments?: unknown[] };
-  return { segments: parsed.segments ?? [] };
+  return parsed.segments ?? [];
+}
+
+async function analyzeWithGroq(script: string, apiKey: string): Promise<{ segments: unknown[] }> {
+  const client = new Groq({ apiKey });
+  const chunks = splitIntoChunks(script);
+
+  const allSegments: unknown[] = [];
+  for (const chunk of chunks) {
+    const segments = await analyzeChunk(client, chunk);
+    allSegments.push(...segments);
+  }
+
+  return { segments: allSegments };
 }
 
 router.post("/analyze-script", async (req, res) => {

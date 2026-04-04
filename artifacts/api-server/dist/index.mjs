@@ -80792,6 +80792,25 @@ Groq.Files = Files;
 // src/routes/analyze.ts
 var router3 = (0, import_express3.Router)();
 var GROQ_MODEL = "llama-3.1-8b-instant";
+var CHUNK_WORD_LIMIT = 400;
+function splitIntoChunks(script) {
+  const sentences = script.match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) ?? [script];
+  const chunks = [];
+  let current = [];
+  let wordCount = 0;
+  for (const sentence of sentences) {
+    const words = sentence.trim().split(/\s+/).length;
+    if (wordCount + words > CHUNK_WORD_LIMIT && current.length > 0) {
+      chunks.push(current.join(" ").trim());
+      current = [];
+      wordCount = 0;
+    }
+    current.push(sentence.trim());
+    wordCount += words;
+  }
+  if (current.length > 0) chunks.push(current.join(" ").trim());
+  return chunks.filter((c) => c.length > 0);
+}
 var buildPrompt = (script) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
 CRITICAL RULE \u2014 COVER THE ENTIRE SCRIPT: You MUST cover every single word of the script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part. Do NOT summarize. Every sentence must appear verbatim in exactly one segment. Create as many segments as needed to cover everything.
@@ -80842,17 +80861,27 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 
 Full script to segment (cover ALL of it):
 ${script}`;
-async function analyzeWithGroq(script, apiKey) {
-  const client = new Groq({ apiKey });
+async function analyzeChunk(client, chunk) {
   const completion = await client.chat.completions.create({
     model: GROQ_MODEL,
-    messages: [{ role: "user", content: buildPrompt(script) }],
+    messages: [{ role: "user", content: buildPrompt(chunk) }],
     response_format: { type: "json_object" },
-    temperature: 0.3
+    temperature: 0.3,
+    max_tokens: 4096
   });
   const raw = completion.choices[0]?.message?.content ?? "{}";
   const parsed = JSON.parse(raw);
-  return { segments: parsed.segments ?? [] };
+  return parsed.segments ?? [];
+}
+async function analyzeWithGroq(script, apiKey) {
+  const client = new Groq({ apiKey });
+  const chunks = splitIntoChunks(script);
+  const allSegments = [];
+  for (const chunk of chunks) {
+    const segments = await analyzeChunk(client, chunk);
+    allSegments.push(...segments);
+  }
+  return { segments: allSegments };
 }
 router3.post("/analyze-script", async (req, res) => {
   const { script, groqKey } = req.body;
