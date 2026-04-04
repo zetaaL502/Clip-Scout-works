@@ -216,6 +216,33 @@ function fixVideoMetadata(inputPath: string, outputPath: string): Promise<void> 
   });
 }
 
+// Probe the actual duration of a downloaded video file using ffprobe.
+// Returns 0 if the duration cannot be determined.
+function getVideoDuration(filePath: string): Promise<number> {
+  return new Promise((resolve) => {
+    const ffprobe = spawn("ffprobe", [
+      "-v", "quiet",
+      "-print_format", "json",
+      "-show_format",
+      filePath,
+    ], { stdio: ["ignore", "pipe", "ignore"] });
+
+    let stdout = "";
+    ffprobe.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    ffprobe.on("error", () => resolve(0));
+    ffprobe.on("close", (code) => {
+      if (code !== 0) { resolve(0); return; }
+      try {
+        const info = JSON.parse(stdout) as { format?: { duration?: string } };
+        const dur = parseFloat(info.format?.duration ?? "0");
+        resolve(isNaN(dur) ? 0 : dur);
+      } catch {
+        resolve(0);
+      }
+    });
+  });
+}
+
 // NEW FEATURE: Multi-video per segment duration division, trimming and stitching
 // Trim a video file to exactly `durationSecs` seconds, re-encoding to h264/aac for consistent format.
 // If the source is shorter than durationSecs FFmpeg simply outputs the full source (no error).
@@ -239,6 +266,33 @@ function trimVideo(inputPath: string, outputPath: string, durationSecs: number):
     ffmpeg.on("close", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`FFmpeg trim failed (code ${code}): ${stderrChunks.join("")}`));
+    });
+  });
+}
+
+// Loop a video seamlessly using -stream_loop -1 then trim to exactly `targetSecs`.
+// Used when the source clip is shorter than the target sub-duration.
+function loopAndTrimVideo(inputPath: string, outputPath: string, targetSecs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel", "error",
+      "-stream_loop", "-1",   // loop input indefinitely
+      "-i", inputPath,
+      "-t", targetSecs.toFixed(3),
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-crf", "23",
+      "-c:a", "aac",
+      "-movflags", "+faststart",
+      outputPath,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+
+    const stderrChunks: string[] = [];
+    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg loop failed (code ${code}): ${stderrChunks.join("")}`));
     });
   });
 }
@@ -294,14 +348,26 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
     // sub_duration = segment_duration / N  (floating-point division)
     const subDuration = duration / N;
 
+    const DURATION_TOLERANCE = 0.1; // seconds — treat clips within 0.1s as "equal"
     const trimmedPaths: string[] = [];
     for (let clipIdx = 0; clipIdx < N; clipIdx++) {
       const rawPath = path.join(jobDir, `seg${segIdx}_clip${clipIdx}.raw.mp4`);
       const trimmedPath = path.join(jobDir, `seg${segIdx}_clip${clipIdx}.mp4`);
       try {
         await downloadFile(urls[clipIdx], rawPath);
-        // Trim to exact sub_duration seconds (or full video if source is shorter)
-        await trimVideo(rawPath, trimmedPath, subDuration);
+
+        // Probe actual clip duration to decide: loop vs trim vs copy
+        const actualDuration = await getVideoDuration(rawPath);
+
+        if (actualDuration > 0 && actualDuration < subDuration - DURATION_TOLERANCE) {
+          // Clip is SHORTER than target → loop seamlessly then trim to exact sub-duration
+          await loopAndTrimVideo(rawPath, trimmedPath, subDuration);
+        } else {
+          // Clip is LONGER or EQUAL → trim to exact sub-duration
+          // (FFmpeg -t on a clip that's already exactly the right length is a no-op)
+          await trimVideo(rawPath, trimmedPath, subDuration);
+        }
+
         await fsp.unlink(rawPath).catch(() => {});
         trimmedPaths.push(trimmedPath);
       } catch {
