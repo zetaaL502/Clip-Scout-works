@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^1.48.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/integrations-gemini-ai": "workspace:*",
     "archiver": "^7.0.1",

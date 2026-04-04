@@ -6,6 +6,7 @@ const KEYS = {
   CLIPS: 'clipscout_clips',
   SELECTIONS: 'clipscout_selections',
   GROQ_KEY: 'clipscout_groq_key',
+  GEMINI_KEY: 'clipscout_gemini_key',
   GIPHY_KEY: 'clipscout_giphy_key',
   PEXELS_KEY: 'clipscout_pexels_key',
 };
@@ -44,6 +45,8 @@ function sanitizeClipMap(input: Record<string, Clip[]>): Record<string, Clip[]> 
 export const storage = {
   getGroqKey: () => localStorage.getItem(KEYS.GROQ_KEY) ?? '',
   setGroqKey: (k: string) => localStorage.setItem(KEYS.GROQ_KEY, k),
+  getGeminiKey: () => localStorage.getItem(KEYS.GEMINI_KEY) ?? '',
+  setGeminiKey: (k: string) => localStorage.setItem(KEYS.GEMINI_KEY, k),
   getGiphyKey: () => localStorage.getItem(KEYS.GIPHY_KEY) ?? '',
   setGiphyKey: (k: string) => localStorage.setItem(KEYS.GIPHY_KEY, k),
   getPexelsKey: () => localStorage.getItem(KEYS.PEXELS_KEY) ?? '',

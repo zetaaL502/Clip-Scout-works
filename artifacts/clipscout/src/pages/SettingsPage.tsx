@@ -9,6 +9,7 @@ interface Props {
 }
 
 export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
+  const [geminiKey, setGeminiKey] = useState(storage.getGeminiKey());
   const [giphyKey, setGiphyKey] = useState(storage.getGiphyKey());
   const [pexelsKey, setPexelsKey] = useState(storage.getPexelsKey());
   const { addToast } = useToastCtx();
@@ -18,6 +19,7 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
       addToast('error', 'Giphy API key is required.');
       return;
     }
+    storage.setGeminiKey(geminiKey.trim());
     storage.setGiphyKey(giphyKey.trim());
     storage.setPexelsKey(pexelsKey.trim());
     addToast('success', 'Settings saved!');
@@ -40,11 +42,18 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-[#111] border border-gray-800 rounded-xl p-4">
-            <p className="text-sm text-gray-300 font-medium mb-1">Script Analysis</p>
-            <p className="text-xs text-gray-500">
-              Powered by Gemini AI — no API key needed. Script analysis is handled automatically by the server.
-            </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Gemini API Key
+            </label>
+            <input
+              type="password"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              placeholder="Your Gemini API key (aistudio.google.com)"
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
+            />
+            <p className="mt-1 text-xs text-gray-500">Used for script analysis. Get a free key at aistudio.google.com</p>
           </div>
 
           <div>

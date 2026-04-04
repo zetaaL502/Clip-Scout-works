@@ -104,6 +104,9 @@ importers:
 
   artifacts/api-server:
     dependencies:
+      '@google/genai':
+        specifier: ^1.48.0
+        version: 1.48.0
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod

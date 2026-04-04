@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { ai } from "@workspace/integrations-gemini-ai";
+import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 
 const router: IRouter = Router();
@@ -75,8 +76,9 @@ async function analyzeWithGroq(script: string): Promise<{ segments: unknown[] }>
   return { segments: parsed.segments ?? [] };
 }
 
-async function analyzeWithGemini(script: string): Promise<{ segments: unknown[] }> {
-  const response = await ai.models.generateContent({
+async function analyzeWithGemini(script: string, userApiKey?: string): Promise<{ segments: unknown[] }> {
+  const client = userApiKey ? new GoogleGenAI({ apiKey: userApiKey }) : ai;
+  const response = await client.models.generateContent({
     model: GEMINI_MODEL,
     contents: [{ role: "user", parts: [{ text: buildPrompt(script) }] }],
     config: { responseMimeType: "application/json" },
@@ -88,7 +90,7 @@ async function analyzeWithGemini(script: string): Promise<{ segments: unknown[] 
 }
 
 router.post("/analyze-script", async (req, res) => {
-  const { script } = req.body as { script?: string };
+  const { script, geminiKey } = req.body as { script?: string; geminiKey?: string };
 
   if (!script || typeof script !== "string" || script.trim().length < 50) {
     res.status(400).json({ error: "script is required and must be at least 50 characters" });
@@ -98,7 +100,7 @@ router.post("/analyze-script", async (req, res) => {
   try {
     const result = groqClient
       ? await analyzeWithGroq(script.trim())
-      : await analyzeWithGemini(script.trim());
+      : await analyzeWithGemini(script.trim(), geminiKey?.trim() || undefined);
 
     const segments = result.segments;
     if (!Array.isArray(segments) || segments.length === 0) {
