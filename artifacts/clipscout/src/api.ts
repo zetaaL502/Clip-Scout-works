@@ -141,13 +141,11 @@ export async function fetchBestPexelsExportUrl(videoId: string): Promise<string>
 
 type RawSegment = Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>;
 
-// Analyzes the full script by sending it to the backend Gemini endpoint in one call.
-// Gemini 2.5 Flash handles even 15-minute scripts (2,500+ words) without splitting.
 export async function analyzeScript(script: string, onStatus?: (msg: string) => void): Promise<RawSegment[]> {
-  onStatus?.('Sending script to Gemini AI…');
+  onStatus?.('Reading your script…');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
+  const timeout = setTimeout(() => controller.abort(), 180_000);
 
   try {
     const groqKey = storage.getGroqKey().trim();
@@ -165,18 +163,47 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
       throw new Error(body.error ?? `Server error: ${res.status}`);
     }
 
-    onStatus?.('Processing segments…');
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('No response stream available.');
 
-    const data = await res.json() as { segments?: RawSegment[] };
-    const segments = data.segments ?? [];
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let segments: RawSegment[] = [];
 
-    if (segments.length === 0) {
-      throw new Error('Gemini returned no segments. Please try again.');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6)) as {
+            type: string;
+            message?: string;
+            segments?: RawSegment[];
+          };
+          if (event.type === 'progress' && event.message) {
+            onStatus?.(event.message);
+          } else if (event.type === 'result' && event.segments) {
+            segments = event.segments;
+          } else if (event.type === 'error' && event.message) {
+            throw new Error(event.message);
+          }
+        } catch (parseErr) {
+          if ((parseErr as Error).message !== 'Unexpected end of JSON input') throw parseErr;
+        }
+      }
     }
 
-    // Normalize order_index to be sequential from 1
-    segments.forEach((seg, i) => { seg.order_index = i + 1; });
+    if (segments.length === 0) {
+      throw new Error('Groq returned no segments. Please try again.');
+    }
 
+    segments.forEach((seg, i) => { seg.order_index = i + 1; });
     return segments;
   } catch (e) {
     clearTimeout(timeout);

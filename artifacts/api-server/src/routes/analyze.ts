@@ -77,10 +77,7 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script to segment (cover ALL of it):
 ${script}`;
 
-async function analyzeChunk(
-  client: Groq,
-  chunk: string,
-): Promise<unknown[]> {
+async function analyzeChunk(client: Groq, chunk: string): Promise<unknown[]> {
   const completion = await client.chat.completions.create({
     model: GROQ_MODEL,
     messages: [{ role: "user", content: buildPrompt(chunk) }],
@@ -92,19 +89,6 @@ async function analyzeChunk(
   const raw = completion.choices[0]?.message?.content ?? "{}";
   const parsed = JSON.parse(raw) as { segments?: unknown[] };
   return parsed.segments ?? [];
-}
-
-async function analyzeWithGroq(script: string, apiKey: string): Promise<{ segments: unknown[] }> {
-  const client = new Groq({ apiKey });
-  const chunks = splitIntoChunks(script);
-
-  const allSegments: unknown[] = [];
-  for (const chunk of chunks) {
-    const segments = await analyzeChunk(client, chunk);
-    allSegments.push(...segments);
-  }
-
-  return { segments: allSegments };
 }
 
 router.post("/analyze-script", async (req, res) => {
@@ -121,18 +105,36 @@ router.post("/analyze-script", async (req, res) => {
     return;
   }
 
-  try {
-    const result = await analyzeWithGroq(script.trim(), apiKey);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
 
-    const segments = result.segments;
-    if (!Array.isArray(segments) || segments.length === 0) {
-      res.status(502).json({ error: "AI returned no segments. Please try again." });
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  try {
+    const client = new Groq({ apiKey });
+    const chunks = splitIntoChunks(script.trim());
+    const total = chunks.length;
+
+    send({ type: "progress", message: `Starting analysis — ${total} part${total !== 1 ? "s" : ""} to process…` });
+
+    const allSegments: unknown[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      send({ type: "progress", message: `Analyzing part ${i + 1} of ${total}…` });
+      const segments = await analyzeChunk(client, chunks[i]);
+      allSegments.push(...segments);
+    }
+
+    if (allSegments.length === 0) {
+      send({ type: "error", message: "AI returned no segments. Please try again." });
+      res.end();
       return;
     }
 
     const MIN_DURATION = 15;
     const MAX_DURATION = 30;
-    const clamped = segments.map((seg) => {
+    const clamped = allSegments.map((seg) => {
       const raw_duration = (seg as Record<string, unknown>).duration_estimate;
       const parsed_duration = parseFloat(String(raw_duration).replace(/[^0-9.]/g, ""));
       const clamped_duration = isNaN(parsed_duration)
@@ -141,11 +143,13 @@ router.post("/analyze-script", async (req, res) => {
       return { ...(seg as object), duration_estimate: clamped_duration };
     });
 
-    res.json({ segments: clamped });
+    send({ type: "result", segments: clamped });
+    res.end();
   } catch (err) {
     req.log.error({ err }, "Groq analyze-script failed");
     const message = (err as Error)?.message ?? "Unknown error";
-    res.status(500).json({ error: `Groq error: ${message}` });
+    send({ type: "error", message: `Groq error: ${message}` });
+    res.end();
   }
 });
 
