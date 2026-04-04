@@ -1,0 +1,90 @@
+ 
+[Region: asia-southeast1]
+==============
+Using Nixpacks
+==============
+
+context: gw3j-ByxH
+╔══════════════════════════════ Nixpacks v1.38.0 ══════════════════════════════╗
+║ setup      │ nodejs_22, ffmpeg, nodePackages_latest.pnpm                     ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ install    │ pnpm install --no-frozen-lockfile                               ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ build      │ pnpm run build                                                  ║
+║──────────────────────────────────────────────────────────────────────────────║
+║ start      │ node --enable-source-maps ./artifacts/api-server/dist/index.mjs ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+internal
+load build definition from Dockerfile
+0ms
+
+internal
+load metadata for ghcr.io/railwayapp/nixpacks:ubuntu-1745885067
+519ms
+
+internal
+load .dockerignore
+1ms
+
+internal
+load build context
+0ms
+
+stage-0
+COPY .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix cached
+0ms
+
+stage-0
+RUN nix-env -if .nixpacks/nixpkgs-ffeebf0acf3ae8b29f8c7049cd911b9636efd7e7.nix && nix-collect-garbage -d cached
+0ms
+
+stage-0
+COPY . /app/.
+609ms
+
+stage-0
+RUN pnpm install --no-frozen-lockfile
+8s
+Done in 8s
+
+stage-0
+COPY . /app/.
+326ms
+
+stage-0
+RUN pnpm run build
+4s
+⚡ Done in 264ms
+
+stage-0
+RUN printf '\nPATH=/app/node_modules/.bin:$PATH' >> /root/.profile
+93ms
+
+stage-0
+COPY . /app
+77ms
+
+auth
+sharing credentials for production-asia-southeast1-eqsg3a.railway-registry.com
+1ms
+
+importing to docker
+29s
+=== Successfully Built! ===
+Run:
+docker run -it production-asia-southeast1-eqsg3a.railway-registry.com/618283a4-8447-4ed2-9278-19fb5df7d3bd:bb3a5369-20bd-4a0b-974c-06a4f1b41478
+Build time: 53.94 seconds
+ 
+====================
+Starting Healthcheck
+====================
+Path: /api/healthz
+Retry window: 30s
+ 
+Attempt #1 failed with service unavailable. Continuing to retry for 19s
+Attempt #2 failed with service unavailable. Continuing to retry for 8s
+ 
+1/1 replicas never became healthy!
+
+Healthcheck failed!
