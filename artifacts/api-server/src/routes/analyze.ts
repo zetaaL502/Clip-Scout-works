@@ -28,7 +28,7 @@ For giphy_keywords:
 - 2–3 words for a fun expressive GIF. Example: "mind blown", "money rain", "shocked face"
 
 For duration_estimate:
-- Estimated speaking time. Example: "~15 seconds"
+- Estimated speaking time in seconds as a plain integer. Minimum 15, maximum 30. No units, no tilde, no text — just the number. Examples: 15, 20, 25, 30
 
 Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 {
@@ -38,7 +38,7 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
       "text_body": "exact script text for this segment",
       "pexels_keywords": "city skyline",
       "giphy_keywords": "mind blown",
-      "duration_estimate": "~15 seconds"
+      "duration_estimate": 20
     }
   ]
 }
@@ -81,7 +81,19 @@ router.post("/analyze-script", async (req, res) => {
       return;
     }
 
-    res.json({ segments });
+    // Clamp duration_estimate to [15, 30] seconds regardless of what the model returned
+    const MIN_DURATION = 15;
+    const MAX_DURATION = 30;
+    const clamped = segments.map((seg) => {
+      const raw_duration = (seg as Record<string, unknown>).duration_estimate;
+      const parsed_duration = parseFloat(String(raw_duration).replace(/[^0-9.]/g, ""));
+      const clamped_duration = isNaN(parsed_duration)
+        ? 20
+        : Math.min(MAX_DURATION, Math.max(MIN_DURATION, parsed_duration));
+      return { ...(seg as object), duration_estimate: clamped_duration };
+    });
+
+    res.json({ segments: clamped });
   } catch (err) {
     req.log.error({ err }, "Gemini analyze-script failed");
     const message = (err as Error)?.message ?? "Unknown error";

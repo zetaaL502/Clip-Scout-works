@@ -525,8 +525,10 @@ export function GridPage({ onBack, onSettings }: Props) {
     for (const [segIdx, keys] of Array.from(segmentGroups.entries()).sort((a, b) => a[0] - b[0])) {
       const seg = segments[segIdx];
       if (!seg) continue;
-      // Parse duration_estimate e.g. "15s" → 15, "20" → 20
-      const duration = parseFloat(seg.duration_estimate) || 20;
+      // Parse duration_estimate: handles plain numbers (20), "~15 seconds", "15s", etc.
+      // Clamp to [15, 30] to match server-enforced limits
+      const rawDur = parseFloat(String(seg.duration_estimate).replace(/[^0-9.]/g, ''));
+      const duration = isNaN(rawDur) ? 20 : Math.min(30, Math.max(15, rawDur));
       const segUrls: string[] = [];
       for (const key of keys) {
         const clip = clipByKey.get(key);
