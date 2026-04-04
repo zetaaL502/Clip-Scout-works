@@ -1,27 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Accept either Replit integration vars OR a plain GEMINI_API_KEY (for Railway / self-hosted)
-const apiKey =
-  process.env.AI_INTEGRATIONS_GEMINI_API_KEY ||
-  process.env.GEMINI_API_KEY;
+// Priority 1: user's own Google AI Studio key (works on Replit + Railway)
+const plainApiKey = process.env.GEMINI_API_KEY;
 
-if (!apiKey) {
+// Priority 2: Replit integration proxy vars
+const replitBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+const replitApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+
+if (!plainApiKey && !replitBaseUrl) {
   throw new Error(
-    "Gemini API key not found. Set AI_INTEGRATIONS_GEMINI_API_KEY (Replit) or GEMINI_API_KEY (Railway/self-hosted).",
+    "No Gemini credentials found. Set GEMINI_API_KEY (get one free at aistudio.google.com).",
   );
 }
 
-const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com";
-const isStandardGoogleApi = baseUrl.includes("generativelanguage.googleapis.com");
-
-export const ai = new GoogleGenAI({
-  apiKey,
-  ...(isStandardGoogleApi
-    ? {}
-    : {
-        httpOptions: {
-          apiVersion: "",
-          baseUrl,
-        },
-      }),
-});
+// Use plain key directly with Google's API (most reliable)
+// Fall back to Replit integration proxy if no plain key
+export const ai = plainApiKey
+  ? new GoogleGenAI({ apiKey: plainApiKey })
+  : new GoogleGenAI({
+      apiKey: replitApiKey!,
+      httpOptions: {
+        apiVersion: "",
+        baseUrl: replitBaseUrl!,
+      },
+    });

@@ -1,0 +1,52 @@
+**Task: Add new logic ONLY for the case when the user selects multiple videos for any segment. Do NOT change, refactor, or touch any other part of the code.**
+
+**New required behavior (exactly as described):**
+
+1. For every segment, read its fixed `segment_duration` (in seconds). This value is already available in the code (e.g. 15, 20, or 30).
+
+2. Count how many videos the user selected for that segment. Let’s call this number `N` (N ≥ 1).
+
+3. Calculate the exact duration each selected video should have:
+   - `sub_duration = segment_duration / N`
+   - Example:
+     - Segment = 20s, N=1 → each video gets 20s
+     - Segment = 20s, N=2 → each video gets 10s
+     - Segment = 20s, N=4 → each video gets 5s
+     - Segment = 15s, N=3 → each video gets 5s
+     - Segment = 30s, N=5 → each video gets 6s
+   - Use floating-point division so durations can be fractional seconds (e.g. 6.666s is acceptable).
+
+4. For each selected video in that segment:
+   - Trim the video to exactly `sub_duration` seconds (use the start of the video and cut at the calculated end time).
+   - Keep the original video file intact — create a trimmed copy or use FFmpeg trimming in memory/stream.
+
+5. Stitch the trimmed videos **in the exact order the user selected them** for that segment.
+
+6. Do this for **every** segment independently.
+
+7. After processing all segments, stitch all the resulting segment-level videos together **in the original segment order** (segment 1 → segment 2 → … → segment 40) to create one final master video.
+
+8. The final master video is then delivered to the user exactly as before (via QR code download). The existing export/download flow must remain 100% unchanged except that it now receives the correctly trimmed + stitched video stream.
+
+**Critical safety rules — you MUST follow these exactly:**
+
+- Do NOT change any existing UI, selection logic, auto-select behavior, single-video flow, database schema, prompt segmentation, video generation, or QR code delivery code.
+- Only add the new duration-division + trimming + per-segment stitching logic in the place where the final video is being prepared for export.
+- Keep all variable names, function names, and file structures exactly as they currently exist.
+- Add comments clearly labeling the new code block with:  
+  `// NEW FEATURE: Multi-video per segment duration division, trimming and stitching`
+- Use the most efficient method available in your current stack (FFmpeg, MoviePy, or whatever video library you already use — do not introduce new dependencies).
+- Handle edge cases gracefully:
+  - N = 1 (no division, full segment duration)
+  - Segment duration = 15s, 20s, 30s, max is 30s
+  - Floating-point durations (use precise timing)
+  - Videos that are shorter than the required sub_duration (pad with black or loop last frame — but prefer to document the behavior)
+- Make sure the final stitched video has correct total duration = sum of all original segment_durations (no drift).
+
+**Output format:**
+- Show only the exact code diff / new function / modified section that needs to be added or replaced.
+- Include a short explanation of where to insert this code.
+- Do not write any other code or suggestions.
+
+Implement this feature perfectly in one shot so nothing breaks and the new multi-video selection logic works exactly as specified.
+.
