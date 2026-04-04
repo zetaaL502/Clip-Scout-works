@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
-  const [geminiKey, setGeminiKey] = useState(storage.getGeminiKey());
+  const [groqKey, setGroqKey] = useState(storage.getGroqKey());
   const [giphyKey, setGiphyKey] = useState(storage.getGiphyKey());
   const [pexelsKey, setPexelsKey] = useState(storage.getPexelsKey());
   const { addToast } = useToastCtx();
@@ -19,7 +19,7 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
       addToast('error', 'Giphy API key is required.');
       return;
     }
-    storage.setGeminiKey(geminiKey.trim());
+    storage.setGroqKey(groqKey.trim());
     storage.setGiphyKey(giphyKey.trim());
     storage.setPexelsKey(pexelsKey.trim());
     addToast('success', 'Settings saved!');
@@ -44,16 +44,16 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Gemini API Key
+              Groq API Key
             </label>
             <input
               type="password"
-              value={geminiKey}
-              onChange={(e) => setGeminiKey(e.target.value)}
-              placeholder="Your Gemini API key (aistudio.google.com)"
+              value={groqKey}
+              onChange={(e) => setGroqKey(e.target.value)}
+              placeholder="Your Groq API key (console.groq.com)"
               className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
             />
-            <p className="mt-1 text-xs text-gray-500">Used for script analysis. Get a free key at aistudio.google.com</p>
+            <p className="mt-1 text-xs text-gray-500">Used for script analysis with Llama 3.1 8B. Get a free key at console.groq.com</p>
           </div>
 
           <div>

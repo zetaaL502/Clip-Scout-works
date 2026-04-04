@@ -1,16 +1,9 @@
 import { Router, type IRouter } from "express";
-import { ai } from "@workspace/integrations-gemini-ai";
-import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 
 const router: IRouter = Router();
 
-const GEMINI_MODEL = "gemini-2.0-flash";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-
-const groqClient = process.env.GROQ_API_KEY
-  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
-  : null;
+const GROQ_MODEL = "llama-3.1-8b-instant";
 
 const buildPrompt = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
@@ -63,8 +56,9 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script to segment (cover ALL of it):
 ${script}`;
 
-async function analyzeWithGroq(script: string): Promise<{ segments: unknown[] }> {
-  const completion = await groqClient!.chat.completions.create({
+async function analyzeWithGroq(script: string, apiKey: string): Promise<{ segments: unknown[] }> {
+  const client = new Groq({ apiKey });
+  const completion = await client.chat.completions.create({
     model: GROQ_MODEL,
     messages: [{ role: "user", content: buildPrompt(script) }],
     response_format: { type: "json_object" },
@@ -76,31 +70,22 @@ async function analyzeWithGroq(script: string): Promise<{ segments: unknown[] }>
   return { segments: parsed.segments ?? [] };
 }
 
-async function analyzeWithGemini(script: string, userApiKey?: string): Promise<{ segments: unknown[] }> {
-  const client = userApiKey ? new GoogleGenAI({ apiKey: userApiKey }) : ai;
-  const response = await client.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: [{ role: "user", parts: [{ text: buildPrompt(script) }] }],
-    config: { responseMimeType: "application/json" },
-  });
-
-  const raw = response.text ?? "{}";
-  const parsed = JSON.parse(raw) as { segments?: unknown[] };
-  return { segments: parsed.segments ?? [] };
-}
-
 router.post("/analyze-script", async (req, res) => {
-  const { script, geminiKey } = req.body as { script?: string; geminiKey?: string };
+  const { script, groqKey } = req.body as { script?: string; groqKey?: string };
 
   if (!script || typeof script !== "string" || script.trim().length < 50) {
     res.status(400).json({ error: "script is required and must be at least 50 characters" });
     return;
   }
 
+  const apiKey = groqKey?.trim() || process.env.GROQ_API_KEY || "";
+  if (!apiKey) {
+    res.status(400).json({ error: "Groq API key is required. Add it in Settings." });
+    return;
+  }
+
   try {
-    const result = groqClient
-      ? await analyzeWithGroq(script.trim())
-      : await analyzeWithGemini(script.trim(), geminiKey?.trim() || undefined);
+    const result = await analyzeWithGroq(script.trim(), apiKey);
 
     const segments = result.segments;
     if (!Array.isArray(segments) || segments.length === 0) {
@@ -121,9 +106,9 @@ router.post("/analyze-script", async (req, res) => {
 
     res.json({ segments: clamped });
   } catch (err) {
-    req.log.error({ err }, "Gemini analyze-script failed");
+    req.log.error({ err }, "Groq analyze-script failed");
     const message = (err as Error)?.message ?? "Unknown error";
-    res.status(500).json({ error: `Gemini error: ${message}` });
+    res.status(500).json({ error: `Groq error: ${message}` });
   }
 });
 

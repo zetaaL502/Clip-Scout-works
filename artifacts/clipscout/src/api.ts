@@ -150,11 +150,11 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
   try {
-    const geminiKey = storage.getGeminiKey().trim();
+    const groqKey = storage.getGroqKey().trim();
     const res = await fetch(ANALYZE_SCRIPT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script, geminiKey: geminiKey || undefined }),
+      body: JSON.stringify({ script, groqKey: groqKey || undefined }),
       signal: controller.signal,
     });
 
