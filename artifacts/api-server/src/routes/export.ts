@@ -27,14 +27,51 @@ interface Job {
   error?: string;
 }
 
+// NEW FEATURE: Multi-video per segment duration division, trimming and stitching
+interface ExportSegment {
+  urls: string[];
+  duration: number; // segment duration in seconds (e.g. 15, 20, 30)
+}
+
 const jobs = new Map<string, Job>();
 const zipFiles = new Map<string, { filePath: string; timer: ReturnType<typeof setTimeout> }>();
 
 fsp.mkdir(EXPORTS_DIR, { recursive: true }).catch(() => {});
 
 router.post("/server-export", async (req: Request, res: Response) => {
-  const { urls } = req.body as { urls?: unknown };
+  // NEW FEATURE: Multi-video per segment duration division, trimming and stitching
+  // Accept either { segments: ExportSegment[] } (new) or { urls: string[] } (legacy)
+  const { urls, segments } = req.body as { urls?: unknown; segments?: unknown };
 
+  const origin =
+    (req.headers.origin as string | undefined) ||
+    `${req.protocol}://${req.headers.host}`;
+
+  if (Array.isArray(segments) && segments.length > 0) {
+    // New format: per-segment grouping with duration info
+    const validSegments = (segments as unknown[]).filter(
+      (s): s is ExportSegment =>
+        s !== null &&
+        typeof s === "object" &&
+        Array.isArray((s as ExportSegment).urls) &&
+        (s as ExportSegment).urls.length > 0 &&
+        typeof (s as ExportSegment).duration === "number",
+    );
+    if (validSegments.length === 0) {
+      res.status(400).json({ error: "segments must be a non-empty array of {urls, duration}" });
+      return;
+    }
+    const jobId = randomUUID();
+    jobs.set(jobId, { status: "processing", current: 0, total: validSegments.length });
+    res.json({ jobId });
+    processSegmentsExport(jobId, validSegments, origin).catch((err: Error) => {
+      const job = jobs.get(jobId);
+      if (job) { job.status = "error"; job.error = err.message; }
+    });
+    return;
+  }
+
+  // Legacy flat-urls format
   if (!Array.isArray(urls) || urls.length === 0) {
     res.status(400).json({ error: "urls array is required" });
     return;
@@ -49,10 +86,6 @@ router.post("/server-export", async (req: Request, res: Response) => {
   const jobId = randomUUID();
   jobs.set(jobId, { status: "processing", current: 0, total: stringUrls.length });
   res.json({ jobId });
-
-  const origin =
-    (req.headers.origin as string | undefined) ||
-    `${req.protocol}://${req.headers.host}`;
 
   processExport(jobId, stringUrls, origin).catch((err: Error) => {
     const job = jobs.get(jobId);
@@ -181,6 +214,171 @@ function fixVideoMetadata(inputPath: string, outputPath: string): Promise<void> 
       }
     });
   });
+}
+
+// NEW FEATURE: Multi-video per segment duration division, trimming and stitching
+// Trim a video file to exactly `durationSecs` seconds, re-encoding to h264/aac for consistent format.
+// If the source is shorter than durationSecs FFmpeg simply outputs the full source (no error).
+function trimVideo(inputPath: string, outputPath: string, durationSecs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel", "error",
+      "-i", inputPath,
+      "-t", durationSecs.toFixed(3),
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-crf", "23",
+      "-c:a", "aac",
+      "-movflags", "+faststart",
+      outputPath,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+
+    const stderrChunks: string[] = [];
+    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg trim failed (code ${code}): ${stderrChunks.join("")}`));
+    });
+  });
+}
+
+// NEW FEATURE: Multi-video per segment duration division, trimming and stitching
+// Concatenate multiple video files (all same codec) into a single output using FFmpeg concat demuxer.
+async function stitchVideos(inputPaths: string[], outputPath: string, tempDir: string): Promise<void> {
+  if (inputPaths.length === 1) {
+    await fsp.copyFile(inputPaths[0], outputPath);
+    return;
+  }
+  const listFile = path.join(tempDir, `concat_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+  const listContent = inputPaths.map((p) => `file '${p}'`).join("\n");
+  await fsp.writeFile(listFile, listContent, "utf8");
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn("ffmpeg", [
+      "-loglevel", "error",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listFile,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      outputPath,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+
+    const stderrChunks: string[] = [];
+    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+    ffmpeg.on("error", (err) => { fsp.unlink(listFile).catch(() => {}); reject(err); });
+    ffmpeg.on("close", (code) => {
+      fsp.unlink(listFile).catch(() => {});
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg stitch failed (code ${code}): ${stderrChunks.join("")}`));
+    });
+  });
+}
+
+// NEW FEATURE: Multi-video per segment duration division, trimming and stitching
+// For each segment: divide its duration equally among N selected clips, trim each, stitch per segment,
+// then stitch all segments into one master video and deliver via the existing QR/download flow.
+async function processSegmentsExport(jobId: string, segments: ExportSegment[], origin: string): Promise<void> {
+  const job = jobs.get(jobId);
+  if (!job) return;
+
+  await fsp.mkdir(EXPORTS_DIR, { recursive: true });
+  const jobDir = path.join(EXPORTS_DIR, jobId);
+  await fsp.mkdir(jobDir, { recursive: true });
+
+  const segmentOutputPaths: string[] = [];
+
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    const { urls, duration } = segments[segIdx];
+    const N = urls.length;
+    // sub_duration = segment_duration / N  (floating-point division)
+    const subDuration = duration / N;
+
+    const trimmedPaths: string[] = [];
+    for (let clipIdx = 0; clipIdx < N; clipIdx++) {
+      const rawPath = path.join(jobDir, `seg${segIdx}_clip${clipIdx}.raw.mp4`);
+      const trimmedPath = path.join(jobDir, `seg${segIdx}_clip${clipIdx}.mp4`);
+      try {
+        await downloadFile(urls[clipIdx], rawPath);
+        // Trim to exact sub_duration seconds (or full video if source is shorter)
+        await trimVideo(rawPath, trimmedPath, subDuration);
+        await fsp.unlink(rawPath).catch(() => {});
+        trimmedPaths.push(trimmedPath);
+      } catch {
+        await fsp.unlink(rawPath).catch(() => {});
+        await fsp.unlink(trimmedPath).catch(() => {});
+      }
+    }
+
+    if (trimmedPaths.length === 0) {
+      job.current = segIdx + 1;
+      continue;
+    }
+
+    const segOutputPath = path.join(jobDir, `segment_${String(segIdx).padStart(3, "0")}.mp4`);
+    if (trimmedPaths.length === 1) {
+      // N=1 — single clip already trimmed, just move it
+      await fsp.rename(trimmedPaths[0], segOutputPath);
+    } else {
+      // N>1 — stitch trimmed clips in user-selection order
+      await stitchVideos(trimmedPaths, segOutputPath, jobDir);
+      for (const p of trimmedPaths) await fsp.unlink(p).catch(() => {});
+    }
+
+    segmentOutputPaths.push(segOutputPath);
+    job.current = segIdx + 1;
+  }
+
+  if (segmentOutputPaths.length === 0) {
+    job.status = "error";
+    job.error = "No segments could be processed";
+    return;
+  }
+
+  // Stitch all per-segment videos into one final master video
+  const masterPath = path.join(jobDir, "master.mp4");
+  if (segmentOutputPaths.length === 1) {
+    await fsp.rename(segmentOutputPaths[0], masterPath);
+  } else {
+    await stitchVideos(segmentOutputPaths, masterPath, jobDir);
+    for (const p of segmentOutputPaths) await fsp.unlink(p).catch(() => {});
+  }
+
+  // Package and deliver via existing QR/download flow — unchanged
+  const zipId = randomUUID();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const zipFilename = `Project_Videos_${timestamp}.zip`;
+  const zipPath = path.join(EXPORTS_DIR, zipFilename);
+
+  await new Promise<void>((resolve, reject) => {
+    const output = fs.createWriteStream(zipPath);
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    output.on("close", resolve);
+    archive.on("error", reject);
+    archive.pipe(output);
+    archive.file(masterPath, { name: `${ZIP_FOLDER_NAME}/master.mp4` });
+    archive.finalize();
+  });
+
+  await fsp.rm(jobDir, { recursive: true, force: true });
+
+  const downloadUrl = `${origin}/api/download/${zipId}`;
+  const qrDataUrl = await QRCode.toDataURL(downloadUrl, {
+    width: 300,
+    margin: 2,
+    color: { dark: "#000000", light: "#ffffff" },
+  });
+
+  const timer = setTimeout(async () => {
+    await fsp.unlink(zipPath).catch(() => {});
+    zipFiles.delete(zipId);
+    jobs.delete(jobId);
+  }, AUTO_DELETE_MS);
+
+  zipFiles.set(zipId, { filePath: zipPath, timer });
+  job.zipId = zipId;
+  job.qrDataUrl = qrDataUrl;
+  job.status = "done";
 }
 
 async function processExport(jobId: string, urls: string[], origin: string): Promise<void> {

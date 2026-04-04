@@ -510,21 +510,40 @@ export function GridPage({ onBack, onSettings }: Props) {
       })
       .map(({ key }) => key);
 
-    const urls: string[] = [];
+    // NEW FEATURE: Multi-video per segment duration division, trimming and stitching
+    // Group selected keys by segment index to preserve per-segment video counts and durations
+    const segmentGroups = new Map<number, string[]>();
     for (const key of sortedSelections) {
-      const clip = clipByKey.get(key);
-      if (!clip) continue;
-      try {
-        const url = clip.source === 'pexels'
-          ? await resolvePexelsCdnUrl(clip)
-          : clip.media_url ?? null;
-        if (url) urls.push(url);
-      } catch {
-        // skip unresolvable clips
-      }
+      const parts = key.split('_');
+      const segIdx = parseInt(parts[1] ?? '0', 10);
+      if (!segmentGroups.has(segIdx)) segmentGroups.set(segIdx, []);
+      segmentGroups.get(segIdx)!.push(key);
     }
 
-    if (urls.length === 0) {
+    // Build segments array: resolve URLs per segment and attach duration
+    const exportSegments: { urls: string[]; duration: number }[] = [];
+    for (const [segIdx, keys] of Array.from(segmentGroups.entries()).sort((a, b) => a[0] - b[0])) {
+      const seg = segments[segIdx];
+      if (!seg) continue;
+      // Parse duration_estimate e.g. "15s" → 15, "20" → 20
+      const duration = parseFloat(seg.duration_estimate) || 20;
+      const segUrls: string[] = [];
+      for (const key of keys) {
+        const clip = clipByKey.get(key);
+        if (!clip) continue;
+        try {
+          const url = clip.source === 'pexels'
+            ? await resolvePexelsCdnUrl(clip)
+            : clip.media_url ?? null;
+          if (url) segUrls.push(url);
+        } catch {
+          // skip unresolvable clips
+        }
+      }
+      if (segUrls.length > 0) exportSegments.push({ urls: segUrls, duration });
+    }
+
+    if (exportSegments.length === 0) {
       addToast('error', 'Could not resolve any clip URLs.');
       return;
     }
@@ -533,11 +552,11 @@ export function GridPage({ onBack, onSettings }: Props) {
       const res = await fetch('/api/server-export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls }),
+        body: JSON.stringify({ segments: exportSegments }),
       });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const { jobId } = await res.json() as { jobId: string };
-      setServerExportState({ jobId, current: 0, total: urls.length, status: 'processing' });
+      setServerExportState({ jobId, current: 0, total: exportSegments.length, status: 'processing' });
     } catch {
       addToast('error', 'Failed to start server export. Please try again.');
     }
