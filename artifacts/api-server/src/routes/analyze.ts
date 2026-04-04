@@ -3,7 +3,7 @@ import { ai } from "@workspace/integrations-gemini-ai";
 
 const router: IRouter = Router();
 
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 const buildPrompt = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
