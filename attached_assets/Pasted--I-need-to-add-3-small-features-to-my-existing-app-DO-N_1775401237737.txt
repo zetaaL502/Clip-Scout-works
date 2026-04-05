@@ -1,0 +1,72 @@
+"I need to add 3 small features to my existing app. DO NOT touch any existing code or break anything. Only ADD these new things:
+
+**FEATURE 1: Manual Keyword Override Per Segment**
+
+Each segment currently auto-searches for clips. Add a small text input field on every segment card that:
+- Has a placeholder that says 'Type your own keyword...'
+- Has a search icon or small button next to it
+- When user types a keyword like 'Dubai Tower' and hits enter or clicks button:
+- It uses that keyword instead of the auto-generated one
+- Searches exactly like the normal auto search does
+- Returns 4 clips same UI same cards same everything
+- Load 4 More button works same way
+- Everything identical to existing flow just different keyword source
+- The manual keyword input should be subtle, small, under or near the existing segment clips area
+- Do not remove or change the auto search - this is just an OPTIONAL override
+
+**FEATURE 2: Add Pixabay as Third Source Option**
+
+Currently there are 2 source buttons: Pexels and Giphy.
+Add Pixabay as a third button next to them.
+
+Backend:
+- Add Pixabay Video API integration
+- Pixabay API key stored in .env as PIXABAY_API_KEY
+- Search endpoint same logic as Pexels
+- Return 4 videos at a time
+- Same pagination logic as Pexels for Load 4 More
+- Return: video URL, thumbnail, title, duration, direct MP4 download link
+
+Frontend:
+- Add Pixabay button next to Pexels and Giphy buttons
+- Same styling as existing buttons
+- When clicked searches Pixabay instead of Pexels
+- Shows 4 clips same card UI as Pexels
+- Load 4 More works same way
+- Download works same way
+
+**FEATURE 3: Add Pixabay API Key Field in Settings/Frontend Keys Section**
+
+Currently frontend has input fields for:
+- Pexels API key
+- Groq API key  
+- Giphy API key
+
+Add a new input field for:
+- Pixabay API key
+- Same styling as existing key inputs
+- Saves same way as other keys
+- Label it 'Pixabay API Key'
+
+**FEATURE 4: Source Selector When Using Manual Keyword**
+
+When user types a manual keyword like 'Dubai':
+- Show a small dropdown or 3 toggle buttons asking: where to search?
+- Options: Pexels | Pixabay | Giphy
+- User selects one
+- It searches that source with that keyword
+- Returns 4 clips same UI
+- Load 4 More works same way
+- Everything identical to existing flow
+
+**IMPORTANT RULES:**
+- Do NOT break any existing features
+- Do NOT change any existing UI styling
+- Match ALL existing UI patterns exactly
+- All new buttons match existing button styles
+- All new cards match existing card styles
+- Pixabay free API base URL is: https://pixabay.com/api/videos/
+- Handle all errors gracefully with same error handling pattern as existing code
+- Add Pixabay API key to .env file with placeholder PIXABAY_API_KEY=your_key_here"
+
+---

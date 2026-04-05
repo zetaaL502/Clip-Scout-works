@@ -9,6 +9,7 @@ const KEYS = {
   GEMINI_KEY: 'clipscout_gemini_key',
   GIPHY_KEY: 'clipscout_giphy_key',
   PEXELS_KEY: 'clipscout_pexels_key',
+  PIXABAY_KEY: 'clipscout_pixabay_key',
 };
 
 function get<T>(key: string): T | null {
@@ -51,6 +52,8 @@ export const storage = {
   setGiphyKey: (k: string) => localStorage.setItem(KEYS.GIPHY_KEY, k),
   getPexelsKey: () => localStorage.getItem(KEYS.PEXELS_KEY) ?? '',
   setPexelsKey: (k: string) => localStorage.setItem(KEYS.PEXELS_KEY, k),
+  getPixabayKey: () => localStorage.getItem(KEYS.PIXABAY_KEY) ?? '',
+  setPixabayKey: (k: string) => localStorage.setItem(KEYS.PIXABAY_KEY, k),
 
   getProject: () => get<Project>(KEYS.PROJECT),
   setProject: (p: Project) => set(KEYS.PROJECT, p),

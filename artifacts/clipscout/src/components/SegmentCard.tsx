@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, ChevronDown } from 'lucide-react';
+import { Plus, ChevronDown, Search } from 'lucide-react';
 import { ClipCard } from './ClipCard';
 import { storage } from '../storage';
-import { fetchPexelsClips, fetchGiphyClips } from '../api';
+import { fetchPexelsClips, fetchGiphyClips, fetchPixabayClips } from '../api';
 import { useToastCtx } from '../context/ToastContext';
 import type { Clip, Segment } from '../types';
 
@@ -26,6 +26,8 @@ function buildPexelsKeywordCycles(keywords?: string | null): string[] {
   const phrases = kw.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
   return phrases.length > 0 ? phrases : [kw];
 }
+
+type ManualSource = 'pexels' | 'pixabay' | 'giphy';
 
 export function SegmentCard({
   segment,
@@ -54,6 +56,12 @@ export function SegmentCard({
   // Starts at 1 (not 0) because the initial load already consumed keyword-page-1.
   const pexelsKeywordIndexRef = useRef(1);
   const pexelsKeywordCycles = useRef(buildPexelsKeywordCycles(segment.pexels_keywords));
+
+  // Manual keyword override state
+  const [manualKeyword, setManualKeyword] = useState('');
+  const [manualSource, setManualSource] = useState<ManualSource>('pexels');
+  const [loadingManual, setLoadingManual] = useState(false);
+  const manualPageRef = useRef(1);
 
   // Fix for segments 2–5 spinning forever:
   // GridPage's async preload may resolve AFTER the IntersectionObserver runs its
@@ -148,7 +156,7 @@ export function SegmentCard({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  async function loadMore(source: 'pexels' | 'giphy') {
+  async function loadMore(source: 'pexels' | 'giphy' | 'pixabay') {
     setShowDropdown(false);
     setLoadingMore(true);
     setLoadMoreError(false);
@@ -163,7 +171,7 @@ export function SegmentCard({
       });
     }, 1000);
 
-    const timeoutMs = source === 'pexels' ? 20000 : 15000;
+    const timeoutMs = source === 'giphy' ? 15000 : 20000;
     let timedOut = false;
     const timeoutId = setTimeout(() => {
       timedOut = true;
@@ -184,6 +192,9 @@ export function SegmentCard({
         pexelsKeywordIndexRef.current += 1;
         const broadSegment = { ...segment, pexels_keywords: keyword };
         newClips = await fetchPexelsClips(broadSegment, page);
+      } else if (source === 'pixabay') {
+        const keyword = (segment.pexels_keywords ?? '').split(',')[0]?.trim() || segment.pexels_keywords;
+        newClips = await fetchPixabayClips(keyword, 1, segment.id);
       } else {
         const nextPage = giphyPage + 1;
         newClips = await fetchGiphyClips(segment, nextPage);
@@ -209,11 +220,50 @@ export function SegmentCard({
           } else {
             addToast('error', 'Pexels request failed. Please try again.');
           }
+        } else if (source === 'pixabay') {
+          addToast('error', 'Pixabay request failed. Please try again.');
         }
         setLoadMoreError(true);
       }
     } finally {
       if (!timedOut) setLoadingMore(false);
+    }
+  }
+
+  async function handleManualSearch() {
+    const query = manualKeyword.trim();
+    if (!query) return;
+    setLoadingManual(true);
+    const page = manualPageRef.current;
+    try {
+      let newClips: Clip[] = [];
+      if (manualSource === 'pexels') {
+        const fakeSegment = { ...segment, pexels_keywords: query };
+        newClips = await fetchPexelsClips(fakeSegment, page);
+      } else if (manualSource === 'pixabay') {
+        newClips = await fetchPixabayClips(query, page, segment.id);
+      } else {
+        const fakeSegment = { ...segment, giphy_keywords: query };
+        newClips = await fetchGiphyClips(fakeSegment, page);
+      }
+      manualPageRef.current += 1;
+      if (newClips.length > 0) {
+        storage.addClips(segment.id, newClips);
+        setClips((prev) => [...prev, ...newClips]);
+      } else {
+        addToast('info', 'No clips found for that keyword.');
+      }
+    } catch (err) {
+      addToast('error', (err as Error)?.message ?? 'Search failed. Please try again.');
+    } finally {
+      setLoadingManual(false);
+    }
+  }
+
+  function handleManualKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      manualPageRef.current = 1;
+      handleManualSearch();
     }
   }
 
@@ -251,6 +301,12 @@ export function SegmentCard({
                 className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
               >
                 Pexels
+              </button>
+              <button
+                onClick={() => loadMore('pixabay')}
+                className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:text-white hover:bg-gray-800 transition-colors border-t border-gray-800"
+              >
+                Pixabay
               </button>
               <button
                 onClick={() => loadMore('giphy')}
@@ -300,6 +356,43 @@ export function SegmentCard({
             Could not find clips. Try Add 4 More again.
           </p>
         )}
+
+        {/* Manual keyword override */}
+        <div className="mt-4 pt-3 border-t border-gray-800">
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg overflow-hidden border border-gray-700 text-xs">
+              {(['pexels', 'pixabay', 'giphy'] as ManualSource[]).map((src) => (
+                <button
+                  key={src}
+                  onClick={() => setManualSource(src)}
+                  className={`px-2.5 py-1.5 capitalize transition-colors ${
+                    manualSource === src
+                      ? 'bg-gray-700 text-white'
+                      : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                  }`}
+                >
+                  {src}
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              value={manualKeyword}
+              onChange={(e) => { setManualKeyword(e.target.value); manualPageRef.current = 1; }}
+              onKeyDown={handleManualKeyDown}
+              placeholder="Type your own keyword..."
+              className="flex-1 bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-gray-500 min-w-0"
+            />
+            <button
+              onClick={() => { manualPageRef.current = 1; handleManualSearch(); }}
+              disabled={loadingManual || !manualKeyword.trim()}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-2 py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 shrink-0"
+            >
+              <Search size={13} />
+              {loadingManual ? 'Searching…' : 'Search'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

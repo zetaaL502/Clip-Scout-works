@@ -362,6 +362,8 @@ const ALLOWED_CDN_HOSTS = [
   "media2.giphy.com",
   "media3.giphy.com",
   "media4.giphy.com",
+  "cdn.pixabay.com",
+  "i.vimeocdn.com",
 ];
 
 // Legacy proxy kept for GIF passthrough only — MP4s go through /trim-video instead.

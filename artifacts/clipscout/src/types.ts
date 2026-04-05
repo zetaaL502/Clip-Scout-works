@@ -12,12 +12,12 @@ export interface Segment {
 export interface Clip {
   id: string;
   segmentId: string;
-  source: 'pexels' | 'giphy';
+  source: 'pexels' | 'giphy' | 'pixabay';
   thumbnail_url: string;
   media_url: string;
   width?: number;
   height?: number;
-  duration?: number; // seconds, Pexels only
+  duration?: number; // seconds, Pexels/Pixabay only
 }
 
 export interface Project {

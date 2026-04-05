@@ -12,6 +12,7 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
   const [groqKey, setGroqKey] = useState(storage.getGroqKey());
   const [giphyKey, setGiphyKey] = useState(storage.getGiphyKey());
   const [pexelsKey, setPexelsKey] = useState(storage.getPexelsKey());
+  const [pixabayKey, setPixabayKey] = useState(storage.getPixabayKey());
   const { addToast } = useToastCtx();
 
   function handleSave() {
@@ -22,6 +23,7 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
     storage.setGroqKey(groqKey.trim());
     storage.setGiphyKey(giphyKey.trim());
     storage.setPexelsKey(pexelsKey.trim());
+    storage.setPixabayKey(pixabayKey.trim());
     addToast('success', 'Settings saved!');
     onSave();
   }
@@ -83,6 +85,22 @@ export function SettingsPage({ onSave, onBack, isOverlay = false }: Props) {
             />
             <p className="mt-1 text-xs text-gray-500">
               Videos load via server proxy. This key is only used if the proxy is unavailable.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Pixabay API Key <span className="text-gray-600">(optional fallback)</span>
+            </label>
+            <input
+              type="password"
+              value={pixabayKey}
+              onChange={(e) => setPixabayKey(e.target.value)}
+              placeholder="Your Pixabay API key"
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Used for Pixabay video search. Get a free key at pixabay.com/api/docs/
             </p>
           </div>
 

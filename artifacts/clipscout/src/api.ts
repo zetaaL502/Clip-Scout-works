@@ -127,6 +127,75 @@ export async function fetchGiphyClips(segment: Segment, page: number): Promise<C
   });
 }
 
+export async function fetchPixabayClips(keywords: string, page: number, segmentId: string, signal?: AbortSignal): Promise<Clip[]> {
+  const query = keywords.trim();
+  if (!query) return [];
+
+  const isLandscape = (width?: number, height?: number) =>
+    typeof width === 'number' && typeof height === 'number' && width > height;
+
+  const mapHits = (hits: Array<{ id: number; picture_id: string; duration: number; videos: Record<string, { url: string; width: number; height: number } | undefined> }>) =>
+    hits
+      .map((hit) => {
+        const video = hit.videos['large'] ?? hit.videos['medium'] ?? hit.videos['small'] ?? hit.videos['tiny'];
+        if (!video?.url) return null;
+        return {
+          id: `pixabay-${hit.id}-${page}`,
+          segmentId,
+          source: 'pixabay' as const,
+          thumbnail_url: `https://i.vimeocdn.com/video/${hit.picture_id}_640x360.jpg`,
+          media_url: video.url,
+          width: video.width,
+          height: video.height,
+          duration: hit.duration,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null && isLandscape(c.width, c.height))
+      .slice(0, 4);
+
+  try {
+    const res = await fetch('/api/pixabay-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: query, page }),
+      signal,
+    });
+    if (res.ok) {
+      const data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number; duration?: number }> = await res.json();
+      return data.slice(0, 4).map((item) => ({
+        id: `pixabay-${item.id}-${page}`,
+        segmentId,
+        source: 'pixabay' as const,
+        thumbnail_url: item.thumbnail_url,
+        media_url: item.media_url,
+        width: item.width,
+        height: item.height,
+        duration: item.duration,
+      }));
+    }
+  } catch {
+    // fall through to client-side key
+  }
+
+  const pixabayKey = storage.getPixabayKey().trim();
+  if (!pixabayKey) {
+    throw new Error('Pixabay unavailable: server proxy failed and no Pixabay key in Settings.');
+  }
+
+  const url = `https://pixabay.com/api/videos/?key=${pixabayKey}&q=${encodeURIComponent(query)}&per_page=20&page=${page}&video_type=film`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`Pixabay error: ${res.status}`);
+  const data = (await res.json()) as {
+    hits: Array<{
+      id: number;
+      picture_id: string;
+      duration: number;
+      videos: Record<string, { url: string; width: number; height: number } | undefined>;
+    }>;
+  };
+  return mapHits(data.hits ?? []);
+}
+
 export async function fetchBestPexelsExportUrl(videoId: string): Promise<string> {
   const res = await fetch(`${PEXELS_VIDEO_PROXY}/${encodeURIComponent(videoId)}`);
   if (!res.ok) {

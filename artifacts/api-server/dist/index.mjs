@@ -20495,27 +20495,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router8;
+    module.exports = Router9;
     module.exports.Route = Route;
-    function Router8(options) {
-      if (!(this instanceof Router8)) {
-        return new Router8(options);
+    function Router9(options) {
+      if (!(this instanceof Router9)) {
+        return new Router9(options);
       }
       const opts = options || {};
-      function router8(req, res, next) {
-        router8.handle(req, res, next);
+      function router9(req, res, next) {
+        router9.handle(req, res, next);
       }
-      Object.setPrototypeOf(router8, this);
-      router8.caseSensitive = opts.caseSensitive;
-      router8.mergeParams = opts.mergeParams;
-      router8.params = {};
-      router8.strict = opts.strict;
-      router8.stack = [];
-      return router8;
+      Object.setPrototypeOf(router9, this);
+      router9.caseSensitive = opts.caseSensitive;
+      router9.mergeParams = opts.mergeParams;
+      router9.params = {};
+      router9.strict = opts.strict;
+      router9.stack = [];
+      return router9;
     }
-    Router8.prototype = function() {
+    Router9.prototype = function() {
     };
-    Router8.prototype.param = function param(name, fn) {
+    Router9.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20535,7 +20535,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router8.prototype.handle = function handle(req, res, callback) {
+    Router9.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20662,7 +20662,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router8.prototype.use = function use(handler) {
+    Router9.prototype.use = function use(handler) {
       let offset = 0;
       let path6 = "/";
       if (typeof handler !== "function") {
@@ -20695,7 +20695,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router8.prototype.route = function route(path6) {
+    Router9.prototype.route = function route(path6) {
       const route2 = new Route(path6);
       const layer = new Layer(path6, {
         sensitive: this.caseSensitive,
@@ -20710,7 +20710,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router8.prototype[method] = function(path6) {
+      Router9.prototype[method] = function(path6) {
         const route = this.route(path6);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20893,13 +20893,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router8 = require_router();
+    var Router9 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router8 = null;
+      var router9 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20908,13 +20908,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router8 === null) {
-            router8 = new Router8({
+          if (router9 === null) {
+            router9 = new Router9({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router8;
+          return router9;
         }
       });
     };
@@ -20985,15 +20985,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router8 = this.router;
+      var router9 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router8.use(path6, fn2);
+          return router9.use(path6, fn2);
         }
         debug(".use app under %s", path6);
         fn2.mountpath = path6;
         fn2.parent = this;
-        router8.use(path6, function mounted_app(req, res, next) {
+        router9.use(path6, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23520,7 +23520,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router8 = require_router();
+    var Router9 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23542,8 +23542,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router8.Route;
-    exports.Router = Router8;
+    exports.Route = Router9.Route;
+    exports.Router = Router9;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -74638,14 +74638,14 @@ var require_multer = __commonJS({
 });
 
 // src/app.ts
-var import_express8 = __toESM(require_express2(), 1);
+var import_express9 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 import path5 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/routes/index.ts
-var import_express7 = __toESM(require_express2(), 1);
+var import_express8 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -78831,7 +78831,9 @@ var ALLOWED_CDN_HOSTS = [
   "media1.giphy.com",
   "media2.giphy.com",
   "media3.giphy.com",
-  "media4.giphy.com"
+  "media4.giphy.com",
+  "cdn.pixabay.com",
+  "i.vimeocdn.com"
 ];
 router2.get("/video-download", async (req, res) => {
   const rawUrl = req.query["url"];
@@ -78951,8 +78953,71 @@ router2.get("/video-download", async (req, res) => {
 });
 var pexels_default = router2;
 
-// src/routes/analyze.ts
+// src/routes/pixabay.ts
 var import_express3 = __toESM(require_express2(), 1);
+var router3 = (0, import_express3.Router)();
+var PIXABAY_TIMEOUT_MS = 15e3;
+async function fetchWithTimeout2(url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function isLandscape2(width, height) {
+  return typeof width === "number" && typeof height === "number" && width > height;
+}
+router3.post("/pixabay-proxy", async (req, res) => {
+  const apiKey = process.env["PIXABAY_API_KEY"];
+  if (!apiKey) {
+    res.status(502).json({ error: "PIXABAY_API_KEY not configured on server" });
+    return;
+  }
+  const { keywords, page = 1 } = req.body;
+  if (!keywords || typeof keywords !== "string" || !keywords.trim()) {
+    res.status(400).json({ error: "keywords is required" });
+    return;
+  }
+  try {
+    const url = `https://pixabay.com/api/videos/?key=${apiKey}&q=${encodeURIComponent(keywords.trim())}&per_page=20&page=${page}&video_type=film`;
+    const pixabayRes = await fetchWithTimeout2(url, PIXABAY_TIMEOUT_MS);
+    if (!pixabayRes.ok) {
+      const text = await pixabayRes.text().catch(() => "");
+      req.log.warn({ status: pixabayRes.status, body: text }, "Pixabay API returned non-OK");
+      res.status(502).json({ error: `Pixabay API error: ${pixabayRes.status}` });
+      return;
+    }
+    const data = await pixabayRes.json();
+    const clips = (data.hits ?? []).map((hit) => {
+      const video = hit.videos.large ?? hit.videos.medium ?? hit.videos.small ?? hit.videos.tiny;
+      if (!video?.url) return null;
+      return {
+        id: String(hit.id),
+        thumbnail_url: `https://i.vimeocdn.com/video/${hit.picture_id}_640x360.jpg`,
+        media_url: video.url,
+        width: video.width,
+        height: video.height,
+        duration: hit.duration
+      };
+    }).filter((c) => c !== null && isLandscape2(c.width, c.height)).slice(0, 4);
+    res.json(clips);
+  } catch (err) {
+    const isAbort = err?.name === "AbortError";
+    if (isAbort) {
+      req.log.warn("Pixabay API request timed out");
+      res.status(504).json({ error: "Pixabay API timed out" });
+    } else {
+      req.log.error({ err }, "Failed to fetch from Pixabay");
+      res.status(502).json({ error: "Failed to reach Pixabay API" });
+    }
+  }
+});
+var pixabay_default = router3;
+
+// src/routes/analyze.ts
+var import_express4 = __toESM(require_express2(), 1);
 
 // ../../node_modules/.pnpm/groq-sdk@1.1.2/node_modules/groq-sdk/internal/tslib.mjs
 function __classPrivateFieldSet(receiver, state, value, kind, f) {
@@ -80790,7 +80855,7 @@ Groq.Batches = Batches;
 Groq.Files = Files;
 
 // src/routes/analyze.ts
-var router3 = (0, import_express3.Router)();
+var router4 = (0, import_express4.Router)();
 var GROQ_MODEL = "llama-3.1-8b-instant";
 var CHUNK_WORD_LIMIT = 400;
 function splitIntoChunks(script) {
@@ -80873,7 +80938,7 @@ async function analyzeChunk(client, chunk) {
   const parsed = JSON.parse(raw);
   return parsed.segments ?? [];
 }
-router3.post("/analyze-script", async (req, res) => {
+router4.post("/analyze-script", async (req, res) => {
   const { script, groqKey } = req.body;
   if (!script || typeof script !== "string" || script.trim().length < 50) {
     res.status(400).json({ error: "script is required and must be at least 50 characters" });
@@ -80927,10 +80992,10 @@ router3.post("/analyze-script", async (req, res) => {
     res.end();
   }
 });
-var analyze_default = router3;
+var analyze_default = router4;
 
 // src/routes/export.ts
-var import_express4 = __toESM(require_express2(), 1);
+var import_express5 = __toESM(require_express2(), 1);
 var import_archiver = __toESM(require_archiver(), 1);
 var import_qrcode = __toESM(require_lib5(), 1);
 import { randomUUID as randomUUID2 } from "node:crypto";
@@ -80940,7 +81005,7 @@ import fsp from "node:fs/promises";
 import path2 from "node:path";
 import https from "node:https";
 import http from "node:http";
-var router4 = (0, import_express4.Router)();
+var router5 = (0, import_express5.Router)();
 var EXPORTS_DIR = "/tmp/exports";
 var AUTO_DELETE_MS = 60 * 60 * 1e3;
 var MAX_CLIP_SECONDS2 = 30;
@@ -80949,7 +81014,7 @@ var jobs = /* @__PURE__ */ new Map();
 var zipFiles = /* @__PURE__ */ new Map();
 fsp.mkdir(EXPORTS_DIR, { recursive: true }).catch(() => {
 });
-router4.post("/server-export", async (req, res) => {
+router5.post("/server-export", async (req, res) => {
   const { urls, segments } = req.body;
   const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
   if (Array.isArray(segments) && segments.length > 0) {
@@ -80992,7 +81057,7 @@ router4.post("/server-export", async (req, res) => {
     }
   });
 });
-router4.get("/export-progress/:jobId", (req, res) => {
+router5.get("/export-progress/:jobId", (req, res) => {
   const { jobId } = req.params;
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -81024,7 +81089,7 @@ router4.get("/export-progress/:jobId", (req, res) => {
   }, 500);
   req.on("close", () => clearInterval(interval));
 });
-router4.get("/download/:zipId", (req, res) => {
+router5.get("/download/:zipId", (req, res) => {
   const { zipId } = req.params;
   const entry = zipFiles.get(zipId);
   if (!entry || !fs.existsSync(entry.filePath)) {
@@ -81369,17 +81434,17 @@ async function processExport(jobId, urls, origin) {
   job.qrDataUrl = qrDataUrl;
   job.status = "done";
 }
-var export_default = router4;
+var export_default = router5;
 
 // src/routes/transfers.ts
-var import_express5 = __toESM(require_express2(), 1);
+var import_express6 = __toESM(require_express2(), 1);
 var import_multer = __toESM(require_multer(), 1);
 var import_archiver2 = __toESM(require_archiver(), 1);
 import { randomUUID as randomUUID3 } from "node:crypto";
 import fs2 from "node:fs";
 import fsp2 from "node:fs/promises";
 import path3 from "node:path";
-var router5 = (0, import_express5.Router)();
+var router6 = (0, import_express6.Router)();
 var TRANSFERS_DIR = "/tmp/transfers";
 var AUTO_DELETE_MS2 = 20 * 60 * 1e3;
 var transfers = /* @__PURE__ */ new Map();
@@ -81408,7 +81473,7 @@ var upload = (0, import_multer.default)({
     }
   }
 });
-router5.post("/transfers/upload", upload.array("files", 20), async (req, res) => {
+router6.post("/transfers/upload", upload.array("files", 20), async (req, res) => {
   const files = req.files;
   if (!files || files.length === 0) {
     res.status(400).json({ error: "No files uploaded" });
@@ -81457,7 +81522,7 @@ router5.post("/transfers/upload", upload.array("files", 20), async (req, res) =>
     res.status(500).json({ error: err.message ?? "Upload failed" });
   }
 });
-router5.get("/transfers/download/:transferId", (req, res) => {
+router6.get("/transfers/download/:transferId", (req, res) => {
   const { transferId } = req.params;
   const entry = transfers.get(transferId);
   if (!entry || !fs2.existsSync(entry.filePath)) {
@@ -81469,10 +81534,10 @@ router5.get("/transfers/download/:transferId", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   fs2.createReadStream(entry.filePath).pipe(res);
 });
-var transfers_default = router5;
+var transfers_default = router6;
 
 // src/routes/subtitles.ts
-var import_express6 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 import path4 from "node:path";
 import fs3 from "node:fs";
 import os from "node:os";
@@ -81496,7 +81561,7 @@ var logger = (0, import_pino.default)({
 });
 
 // src/routes/subtitles.ts
-var router6 = (0, import_express6.Router)();
+var router7 = (0, import_express7.Router)();
 var ASSEMBLYAI_API = "https://api.assemblyai.com/v2";
 var CLEANUP_TIMEOUT_MS = 30 * 60 * 1e3;
 var LANG_CODE_MAP = {
@@ -81525,7 +81590,7 @@ function scheduleCleanup(filePath) {
     });
   }, CLEANUP_TIMEOUT_MS);
 }
-router6.post("/subtitles/chunk", (0, import_express6.json)({ limit: "128kb" }), (req, res) => {
+router7.post("/subtitles/chunk", (0, import_express7.json)({ limit: "128kb" }), (req, res) => {
   const { sessionId, chunkIndex, totalChunks, data } = req.body;
   if (!sessionId || chunkIndex === void 0 || !totalChunks || !data) {
     res.status(400).json({ error: "Missing sessionId, chunkIndex, totalChunks, or data." });
@@ -81541,7 +81606,7 @@ router6.post("/subtitles/chunk", (0, import_express6.json)({ limit: "128kb" }), 
     res.status(500).json({ error: "Failed to write chunk." });
   }
 });
-router6.post("/subtitles/process-many", (0, import_express6.json)({ limit: "10kb" }), async (req, res) => {
+router7.post("/subtitles/process-many", (0, import_express7.json)({ limit: "10kb" }), async (req, res) => {
   const apiKey = process.env["ASSEMBLYAI_API_KEY"];
   if (!apiKey) {
     res.status(502).json({ error: "ASSEMBLYAI_API_KEY not configured on server." });
@@ -81665,7 +81730,7 @@ router6.post("/subtitles/process-many", (0, import_express6.json)({ limit: "10kb
     res.status(500).json({ error: `Processing failed: ${err instanceof Error ? err.message : String(err)}` });
   }
 });
-router6.get("/subtitles/download/:filename", (req, res) => {
+router7.get("/subtitles/download/:filename", (req, res) => {
   const filename = path4.basename(req.params["filename"] ?? "");
   const asName = typeof req.query["as"] === "string" ? req.query["as"] : filename;
   const filePath = path4.join(os.tmpdir(), filename);
@@ -81682,7 +81747,7 @@ router6.get("/subtitles/download/:filename", (req, res) => {
     });
   });
 });
-router6.get("/subtitles/download-page", (req, res) => {
+router7.get("/subtitles/download-page", (req, res) => {
   const rawU = req.query["u"];
   const urls = Array.isArray(rawU) ? rawU : rawU ? [rawU] : [];
   const buttons = urls.map((u) => {
@@ -81714,21 +81779,22 @@ ${buttons}
 </body>
 </html>`);
 });
-var subtitles_default = router6;
+var subtitles_default = router7;
 
 // src/routes/index.ts
-var router7 = (0, import_express7.Router)();
-router7.use(health_default);
-router7.use(pexels_default);
-router7.use(analyze_default);
-router7.use(export_default);
-router7.use(transfers_default);
-router7.use(subtitles_default);
-var routes_default = router7;
+var router8 = (0, import_express8.Router)();
+router8.use(health_default);
+router8.use(pexels_default);
+router8.use(pixabay_default);
+router8.use(analyze_default);
+router8.use(export_default);
+router8.use(transfers_default);
+router8.use(subtitles_default);
+var routes_default = router8;
 
 // src/app.ts
 var __dirname2 = path5.dirname(fileURLToPath(import.meta.url));
-var app = (0, import_express8.default)();
+var app = (0, import_express9.default)();
 var rateLimitMap = /* @__PURE__ */ new Map();
 function rateLimiter(req, res, next) {
   if (req.url.includes("/subtitles/chunk")) {
@@ -81781,11 +81847,11 @@ app.use(
 );
 app.use((0, import_cors.default)(corsOptions));
 app.use(rateLimiter);
-app.use(import_express8.default.json());
-app.use(import_express8.default.urlencoded({ extended: true }));
+app.use(import_express9.default.json());
+app.use(import_express9.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
 var frontendDist = path5.resolve(__dirname2, "../../clipscout/dist/public");
-app.use(import_express8.default.static(frontendDist));
+app.use(import_express9.default.static(frontendDist));
 app.get(/.*/, (_req, res) => {
   res.sendFile(path5.join(frontendDist, "index.html"));
 });
