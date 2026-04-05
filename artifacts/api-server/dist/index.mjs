@@ -80887,9 +80887,13 @@ router3.post("/analyze-script", async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  const send = (data) => res.write(`data: ${JSON.stringify(data)}
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const send = (data) => {
+    res.write(`data: ${JSON.stringify(data)}
 
 `);
+  };
   try {
     const client = new Groq({ apiKey });
     const chunks = splitIntoChunks(script.trim());

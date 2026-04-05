@@ -193,8 +193,8 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
           } else if (event.type === 'error' && event.message) {
             throw new Error(event.message);
           }
-        } catch (parseErr) {
-          if ((parseErr as Error).message !== 'Unexpected end of JSON input') throw parseErr;
+        } catch {
+          // swallow partial/malformed chunk — keep reading
         }
       }
     }
