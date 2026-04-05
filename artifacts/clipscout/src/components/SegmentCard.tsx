@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Plus, ChevronDown, Search } from 'lucide-react';
 import { ClipCard } from './ClipCard';
 import { storage } from '../storage';
@@ -56,6 +56,57 @@ export function SegmentCard({
   const [loadingManual, setLoadingManual] = useState(false);
   const manualPageRef = useRef(1);
   const [textExpanded, setTextExpanded] = useState(false);
+
+  const suggestedKeywords = useMemo(() => {
+    const STOPWORDS = new Set([
+      'the','a','an','and','or','but','in','on','at','to','for','of','with','by',
+      'is','it','be','are','was','were','has','have','do','did','will','this','that',
+      'i','you','he','she','we','they','my','your','his','her','our','their','what',
+      'when','where','how','why','who','which','as','if','so','not','can','just',
+      'about','up','out','there','then','than','very','more','all','any','some',
+      'get','go','know','think','see','look','like','make','take','come','want',
+      'need','tell','say','said','one','two','three','really','actually','also',
+      'even','still','back','right','okay','yeah','let','re','ve','ll','don',
+    ]);
+
+    const suggestions: string[] = [];
+
+    // First: use existing AI-generated keywords from pexels_keywords
+    const fromKeywords = (segment.pexels_keywords ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 2);
+    for (const kw of fromKeywords) {
+      if (!suggestions.includes(kw)) suggestions.push(kw);
+      if (suggestions.length >= 5) break;
+    }
+
+    // Fill remaining slots from the segment text body
+    if (suggestions.length < 5) {
+      const words = (segment.text_body ?? '')
+        .replace(/[^a-zA-Z\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 4 && !STOPWORDS.has(w.toLowerCase()));
+
+      // Score by frequency
+      const freq = new Map<string, number>();
+      for (const w of words) {
+        const lw = w.toLowerCase();
+        freq.set(lw, (freq.get(lw) ?? 0) + 1);
+      }
+      const ranked = Array.from(freq.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([w]) => w);
+
+      for (const w of ranked) {
+        const alreadyIn = suggestions.some((s) => s.toLowerCase() === w);
+        if (!alreadyIn) suggestions.push(w);
+        if (suggestions.length >= 5) break;
+      }
+    }
+
+    return suggestions.slice(0, 5);
+  }, [segment.pexels_keywords, segment.text_body]);
 
   useEffect(() => {
     if (isPreloaded && initialClips.length > 0 && !loadedRef.current) {
@@ -327,6 +378,25 @@ export function SegmentCard({
           )}
         </div>
       </div>
+
+      {/* Keyword suggestions */}
+      {suggestedKeywords.length > 0 && (
+        <div className="px-4 pb-2 pt-2 sm:px-6 flex flex-wrap gap-1.5 border-b border-gray-800">
+          {suggestedKeywords.map((kw) => (
+            <button
+              key={kw}
+              onClick={() => { setManualKeyword(kw); manualPageRef.current = 1; }}
+              className={`px-2.5 py-1 rounded-full text-xs transition-colors border ${
+                manualKeyword === kw
+                  ? 'bg-[#22c55e]/20 border-[#22c55e]/50 text-[#22c55e]'
+                  : 'bg-[#1a1a1a] border-gray-700 text-gray-400 hover:text-white hover:border-gray-500'
+              }`}
+            >
+              {kw}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Clips grid */}
       <div className="p-4 sm:p-6">
