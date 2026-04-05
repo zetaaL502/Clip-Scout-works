@@ -60,15 +60,15 @@ async function generateLine(job: AudioJob, line: ScriptLine): Promise<void> {
   try {
     const tts = new MsEdgeTTS();
     await tts.setMetadata(line.voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const readable = tts.toStream(line.text);
+    const { audioStream } = tts.toStream(line.text);
 
     const writeStream = fs.createWriteStream(outputFile);
-    readable.pipe(writeStream);
+    audioStream.pipe(writeStream);
 
     await new Promise<void>((resolve, reject) => {
       writeStream.on("finish", resolve);
       writeStream.on("error", reject);
-      readable.on("error", reject);
+      audioStream.on("error", reject);
     });
 
     if (!fs.existsSync(outputFile)) {

@@ -22,15 +22,15 @@ router.post("/imessage/preview-voice", async (req, res): Promise<void> => {
   try {
     const tts = new MsEdgeTTS();
     await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const readable = tts.toStream(previewText);
+    const { audioStream } = tts.toStream(previewText);
 
     const writeStream = fs.createWriteStream(tmpFile);
-    readable.pipe(writeStream);
+    audioStream.pipe(writeStream);
 
     await new Promise<void>((resolve, reject) => {
       writeStream.on("finish", resolve);
       writeStream.on("error", reject);
-      readable.on("error", reject);
+      audioStream.on("error", reject);
     });
 
     if (!fs.existsSync(tmpFile)) {

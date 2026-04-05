@@ -1,0 +1,20 @@
+[plugin:runtime-error-plugin] Failed to load because no supported source was found.
+    at file:///home/runner/workspace/node_modules/.pnpm/@replit+vite-plugin-runtime-error-modal@0.0.6/node_modules/@replit/vite-plugin-runtime-error-modal/dist/index.mjs:60:37
+    at emitCustomEvent (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:20443:39)
+    at WebSocket$2.<anonymous> (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:20453:4)
+    at WebSocket$2.emit (node:events:508:28)
+    at Receiver$2.receiverOnMessage (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:19601:22)
+    at Receiver$2.emit (node:events:508:28)
+    at Receiver$2.dataMessage (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:17812:11)
+    at Receiver$2.getData (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:17747:9)
+    at Receiver$2.startLoop (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:17572:12)
+    at Receiver$2._write (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:17519:9)
+    at writeOrBuffer (node:internal/streams/writable:570:12)
+    at _write (node:internal/streams/writable:499:10)
+    at Writable.write (node:internal/streams/writable:508:10)
+    at Socket.socketOnData (file:///home/runner/workspace/node_modules/.pnpm/vite@7.3.1_@types+node@20.19.37_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:19689:37)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:2

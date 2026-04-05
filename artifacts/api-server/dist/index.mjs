@@ -96347,13 +96347,13 @@ router10.post("/imessage/preview-voice", async (req, res) => {
   try {
     const tts = new import_msedge_tts2.MsEdgeTTS();
     await tts.setMetadata(voice, import_msedge_tts2.OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const readable = tts.toStream(previewText);
+    const { audioStream } = tts.toStream(previewText);
     const writeStream = fs4.createWriteStream(tmpFile);
-    readable.pipe(writeStream);
+    audioStream.pipe(writeStream);
     await new Promise((resolve, reject) => {
       writeStream.on("finish", resolve);
       writeStream.on("error", reject);
-      readable.on("error", reject);
+      audioStream.on("error", reject);
     });
     if (!fs4.existsSync(tmpFile)) {
       res.status(500).json({ error: "Audio file was not created" });
@@ -96417,13 +96417,13 @@ async function generateLine(job, line) {
   try {
     const tts = new import_msedge_tts3.MsEdgeTTS();
     await tts.setMetadata(line.voice, import_msedge_tts3.OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const readable = tts.toStream(line.text);
+    const { audioStream } = tts.toStream(line.text);
     const writeStream = fs5.createWriteStream(outputFile);
-    readable.pipe(writeStream);
+    audioStream.pipe(writeStream);
     await new Promise((resolve, reject) => {
       writeStream.on("finish", resolve);
       writeStream.on("error", reject);
-      readable.on("error", reject);
+      audioStream.on("error", reject);
     });
     if (!fs5.existsSync(outputFile)) {
       throw new Error("Output file not created");
