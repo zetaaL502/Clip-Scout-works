@@ -80,6 +80,7 @@
     "client-zip": "^2.5.0",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
-    "qrcode.react": "^4.2.0"
+    "qrcode.react": "^4.2.0",
+    "zustand": "^5.0.12"
   }
 }

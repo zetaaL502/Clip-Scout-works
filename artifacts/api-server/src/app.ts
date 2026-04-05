@@ -83,7 +83,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", router);
 
 // --- Serve frontend static files ---
-const frontendDist = path.resolve(__dirname, "../../clipscout/dist/public");
+const frontendDist = path.resolve(__dirname, "../../../artifacts/clipscout/dist/public");
 app.use(express.static(frontendDist));
 
 // --- Catch-all: serve index.html for client-side routing ---

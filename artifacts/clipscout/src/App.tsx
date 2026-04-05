@@ -8,6 +8,7 @@ import { GridPage } from './pages/GridPage';
 import { QuickSendPage } from './pages/QuickSendPage';
 import { SubtitlePage } from './pages/SubtitlePage';
 import { AppSidebar } from './components/AppSidebar';
+import { TextAutomation } from './features/text-automation/TextAutomation';
 import { storage } from './storage';
 import type { Page } from './types';
 
@@ -64,6 +65,7 @@ function AppContent() {
         )}
         {page === 'quicksend' && <QuickSendPage />}
         {page === 'subtitles' && <SubtitlePage />}
+        {page === 'text-automation' && <TextAutomation />}
       </div>
     </div>
   );
