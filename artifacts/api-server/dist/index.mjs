@@ -24979,7 +24979,7 @@ var require_atomic_sleep = __commonJS({
   "../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports, module) {
     "use strict";
     if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
-      let sleep3 = function(ms) {
+      let sleep4 = function(ms) {
         const valid = ms > 0 && ms < Infinity;
         if (valid === false) {
           if (typeof ms !== "number" && typeof ms !== "bigint") {
@@ -24990,9 +24990,9 @@ var require_atomic_sleep = __commonJS({
         Atomics.wait(nil, 0, 0, Number(ms));
       };
       const nil = new Int32Array(new SharedArrayBuffer(4));
-      module.exports = sleep3;
+      module.exports = sleep4;
     } else {
-      let sleep3 = function(ms) {
+      let sleep4 = function(ms) {
         const valid = ms > 0 && ms < Infinity;
         if (valid === false) {
           if (typeof ms !== "number" && typeof ms !== "bigint") {
@@ -25004,7 +25004,7 @@ var require_atomic_sleep = __commonJS({
         while (target > Date.now()) {
         }
       };
-      module.exports = sleep3;
+      module.exports = sleep4;
     }
   }
 });
@@ -25017,7 +25017,7 @@ var require_sonic_boom = __commonJS({
     var EventEmitter = __require("events");
     var inherits = __require("util").inherits;
     var path13 = __require("path");
-    var sleep3 = require_atomic_sleep();
+    var sleep4 = require_atomic_sleep();
     var assert = __require("assert");
     var BUSY_WRITE_TIMEOUT = 100;
     var kEmptyBuffer = Buffer.allocUnsafe(0);
@@ -25163,7 +25163,7 @@ var require_sonic_boom = __commonJS({
           if ((err.code === "EAGAIN" || err.code === "EBUSY") && this.retryEAGAIN(err, this._writingBuf.length, this._len - this._writingBuf.length)) {
             if (this.sync) {
               try {
-                sleep3(BUSY_WRITE_TIMEOUT);
+                sleep4(BUSY_WRITE_TIMEOUT);
                 this.release(void 0, 0);
               } catch (err2) {
                 this.release(err2);
@@ -25476,7 +25476,7 @@ var require_sonic_boom = __commonJS({
           if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
             throw err;
           }
-          sleep3(BUSY_WRITE_TIMEOUT);
+          sleep4(BUSY_WRITE_TIMEOUT);
         }
       }
       try {
@@ -25513,7 +25513,7 @@ var require_sonic_boom = __commonJS({
           if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
             throw err;
           }
-          sleep3(BUSY_WRITE_TIMEOUT);
+          sleep4(BUSY_WRITE_TIMEOUT);
         }
       }
     }
@@ -26254,7 +26254,7 @@ var require_transport = __commonJS({
     var { createRequire } = __require("module");
     var getCallers = require_caller();
     var { join: join2, isAbsolute, sep } = __require("node:path");
-    var sleep3 = require_atomic_sleep();
+    var sleep4 = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
     function setupOnExit(stream) {
@@ -26288,7 +26288,7 @@ var require_transport = __commonJS({
           return;
         }
         stream.flushSync();
-        sleep3(100);
+        sleep4(100);
         stream.end();
       }
       return stream;
@@ -85470,6 +85470,11 @@ var KOKORO_VOICES = [
   { id: "bm_lewis", label: "Lewis", accent: "British", gender: "Male" }
 ];
 var CHUNK_SIZE = 500;
+var MAX_RETRIES = 4;
+var RETRY_DELAY_MS = 8e3;
+function sleep3(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 function chunkText(text) {
   const trimmed = text.trim();
   if (trimmed.length <= CHUNK_SIZE) return [trimmed];
@@ -85498,26 +85503,51 @@ function chunkText(text) {
 async function callKokoroAPI(text, voice) {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
   if (!apiKey) throw new Error("HUGGINGFACE_API_KEY environment variable is not set");
-  const res = await fetch(
-    "https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ inputs: text, parameters: { voice } })
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const res = await fetch(
+      "https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "x-wait-for-model": "true"
+        },
+        body: JSON.stringify({ inputs: text, parameters: { voice } })
+      }
+    );
+    if (res.status === 503) {
+      const errText = await res.text().catch(() => "");
+      logger.info({ attempt, errText }, "Kokoro model loading, retrying...");
+      await sleep3(RETRY_DELAY_MS);
+      continue;
     }
-  );
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "unknown error");
-    throw new Error(`Kokoro API returned ${res.status}: ${errText}`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "unknown error");
+      throw new Error(`Kokoro API returned ${res.status}: ${errText}`);
+    }
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const json = await res.json();
+      if (json.error) {
+        if (attempt < MAX_RETRIES - 1) {
+          const waitMs = json.estimated_time ? json.estimated_time * 1e3 + 2e3 : RETRY_DELAY_MS;
+          logger.info({ attempt, error: json.error, waitMs }, "Kokoro not ready, retrying...");
+          await sleep3(waitMs);
+          continue;
+        }
+        throw new Error(`Kokoro API error: ${json.error}`);
+      }
+      throw new Error("Kokoro API returned JSON instead of audio");
+    }
+    const ab = await res.arrayBuffer();
+    return Buffer.from(ab);
   }
-  const ab = await res.arrayBuffer();
-  return Buffer.from(ab);
+  throw new Error(`Kokoro API failed after ${MAX_RETRIES} retries (model may still be loading)`);
 }
 function convertToMp3(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
+    const stderr = [];
     const child = spawn3("ffmpeg", [
       "-y",
       "-i",
@@ -85528,9 +85558,10 @@ function convertToMp3(inputPath, outputPath) {
       "128k",
       outputPath
     ]);
+    child.stderr.on("data", (d) => stderr.push(d.toString()));
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`ffmpeg convert exited with code ${code}`));
+      else reject(new Error(`ffmpeg convert exited with code ${code}: ${stderr.slice(-3).join("")}`));
     });
     child.on("error", reject);
   });
@@ -85579,7 +85610,7 @@ async function generateAudio(text, voice, outputMp3Path) {
     for (let i = 0; i < chunks.length; i++) {
       const rawPath = path5.join(tmpDir, `chunk_${i}.raw`);
       const mp3Path = path5.join(tmpDir, `chunk_${i}.mp3`);
-      logger.debug({ chunk: i, chars: chunks[i].length }, "Calling Kokoro API");
+      logger.debug({ chunk: i, chars: chunks[i].length, voice }, "Calling Kokoro API");
       const audioBytes = await callKokoroAPI(chunks[i], voice);
       fs4.writeFileSync(rawPath, audioBytes);
       await convertToMp3(rawPath, mp3Path);

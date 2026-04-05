@@ -21,6 +21,12 @@ export const KOKORO_VOICES = [
 export type KokoroVoiceId = typeof KOKORO_VOICES[number]["id"];
 
 const CHUNK_SIZE = 500;
+const MAX_RETRIES = 4;
+const RETRY_DELAY_MS = 8000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function chunkText(text: string): string[] {
   const trimmed = text.trim();
@@ -52,29 +58,57 @@ async function callKokoroAPI(text: string, voice: string): Promise<Buffer> {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
   if (!apiKey) throw new Error("HUGGINGFACE_API_KEY environment variable is not set");
 
-  const res = await fetch(
-    "https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ inputs: text, parameters: { voice } }),
-    }
-  );
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const res = await fetch(
+      "https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "x-wait-for-model": "true",
+        },
+        body: JSON.stringify({ inputs: text, parameters: { voice } }),
+      }
+    );
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "unknown error");
-    throw new Error(`Kokoro API returned ${res.status}: ${errText}`);
+    if (res.status === 503) {
+      const errText = await res.text().catch(() => "");
+      logger.info({ attempt, errText }, "Kokoro model loading, retrying...");
+      await sleep(RETRY_DELAY_MS);
+      continue;
+    }
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "unknown error");
+      throw new Error(`Kokoro API returned ${res.status}: ${errText}`);
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const json = await res.json() as { error?: string; estimated_time?: number };
+      if (json.error) {
+        if (attempt < MAX_RETRIES - 1) {
+          const waitMs = json.estimated_time ? json.estimated_time * 1000 + 2000 : RETRY_DELAY_MS;
+          logger.info({ attempt, error: json.error, waitMs }, "Kokoro not ready, retrying...");
+          await sleep(waitMs);
+          continue;
+        }
+        throw new Error(`Kokoro API error: ${json.error}`);
+      }
+      throw new Error("Kokoro API returned JSON instead of audio");
+    }
+
+    const ab = await res.arrayBuffer();
+    return Buffer.from(ab);
   }
 
-  const ab = await res.arrayBuffer();
-  return Buffer.from(ab);
+  throw new Error(`Kokoro API failed after ${MAX_RETRIES} retries (model may still be loading)`);
 }
 
 function convertToMp3(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    const stderr: string[] = [];
     const child = spawn("ffmpeg", [
       "-y",
       "-i", inputPath,
@@ -82,9 +116,10 @@ function convertToMp3(inputPath: string, outputPath: string): Promise<void> {
       "-b:a", "128k",
       outputPath,
     ]);
+    child.stderr.on("data", (d) => stderr.push(d.toString()));
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`ffmpeg convert exited with code ${code}`));
+      else reject(new Error(`ffmpeg convert exited with code ${code}: ${stderr.slice(-3).join("")}`));
     });
     child.on("error", reject);
   });
@@ -128,7 +163,7 @@ export async function generateAudio(
     for (let i = 0; i < chunks.length; i++) {
       const rawPath = path.join(tmpDir, `chunk_${i}.raw`);
       const mp3Path = path.join(tmpDir, `chunk_${i}.mp3`);
-      logger.debug({ chunk: i, chars: chunks[i].length }, "Calling Kokoro API");
+      logger.debug({ chunk: i, chars: chunks[i].length, voice }, "Calling Kokoro API");
       const audioBytes = await callKokoroAPI(chunks[i], voice);
       fs.writeFileSync(rawPath, audioBytes);
       await convertToMp3(rawPath, mp3Path);
