@@ -1,0 +1,56 @@
+"Add a new feature and improve UI to my existing Node/Express/React/Tailwind app. DO NOT break or touch any existing code, routes, or components. Only add new things.
+
+**UI IMPROVEMENTS - styling only no logic changes:**
+- Script textarea minimum 300px height full width better padding subtle shadow focus border
+- Main container wider better centered more spacing between sections
+- Segment cards cleaner with shadows borders background color difference between them
+- Clip cards in clean grid with hover animations
+- All buttons polished with hover effects
+- Source buttons Pexels/Giphy/Pixabay styled as toggle pills
+- Load 4 More button full width
+- Export/download buttons stronger standout color
+- Duration badge clearly visible on each card
+- Better typography and mobile responsiveness
+
+**NEW FEATURE - Paste Script With Timestamps:**
+
+Add two toggle buttons at top: 'Enter Script' and 'Paste With Timestamps'
+- Enter Script: shows existing input unchanged
+- Paste With Timestamps: shows new large textarea
+
+**Backend - create utils/timestampParser.js:**
+- Parse text finding timestamp pattern 00:00:00,000 --> 00:00:23,000
+- Extract text after each timestamp ignore timestamp characters
+- Calculate exact duration in seconds per segment
+- Apply segment rules: under 20 sec merge with next, over 40 sec split equally
+- Return array of: segment number, duration, text
+
+**Backend - create utils/clipProcessor.js:**
+- Reject clips under 8 seconds silently load next
+- Clip longer than required: FFmpeg trim from beginning
+- Clip shorter than required: FFmpeg loop until exact duration
+- Clip exact duration: keep unchanged
+- Store in /tmp delete after processing
+
+**Frontend - create TimestampInput.jsx:**
+- Segment cards identical to existing cards
+- Duration badge showing exact seconds
+- Click to select multiple clips per segment
+- Auto calculate: segment duration divided by clips selected = each clip duration
+- Show: Each clip: 15 sec updates live
+- Export button per segment: combines clips in selected order exact segment duration
+- Progress indicator while exporting
+- Delete /tmp files after download
+
+**Error handling:**
+- No timestamps found: show clear error
+- No clips selected on export: show clear error
+- FFmpeg fail: show which clip failed
+- All errors match existing styling
+
+**Technical:**
+- Install ffmpeg-static and fluent-ffmpeg
+- New routes added at bottom of existing express file only
+- DO NOT modify existing routes or components"
+
+---

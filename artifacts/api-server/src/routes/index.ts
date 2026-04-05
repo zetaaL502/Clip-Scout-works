@@ -6,6 +6,7 @@ import analyzeRouter from "./analyze";
 import exportRouter from "./export";
 import transfersRouter from "./transfers";
 import subtitlesRouter from "./subtitles";
+import timestampsRouter from "./timestamps";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(analyzeRouter);
 router.use(exportRouter);
 router.use(transfersRouter);
 router.use(subtitlesRouter);
+router.use(timestampsRouter);
 
 export default router;

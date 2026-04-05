@@ -20495,27 +20495,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router9;
+    module.exports = Router10;
     module.exports.Route = Route;
-    function Router9(options) {
-      if (!(this instanceof Router9)) {
-        return new Router9(options);
+    function Router10(options) {
+      if (!(this instanceof Router10)) {
+        return new Router10(options);
       }
       const opts = options || {};
-      function router9(req, res, next) {
-        router9.handle(req, res, next);
+      function router10(req, res, next) {
+        router10.handle(req, res, next);
       }
-      Object.setPrototypeOf(router9, this);
-      router9.caseSensitive = opts.caseSensitive;
-      router9.mergeParams = opts.mergeParams;
-      router9.params = {};
-      router9.strict = opts.strict;
-      router9.stack = [];
-      return router9;
+      Object.setPrototypeOf(router10, this);
+      router10.caseSensitive = opts.caseSensitive;
+      router10.mergeParams = opts.mergeParams;
+      router10.params = {};
+      router10.strict = opts.strict;
+      router10.stack = [];
+      return router10;
     }
-    Router9.prototype = function() {
+    Router10.prototype = function() {
     };
-    Router9.prototype.param = function param(name, fn) {
+    Router10.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20535,7 +20535,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router9.prototype.handle = function handle(req, res, callback) {
+    Router10.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20662,7 +20662,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router9.prototype.use = function use(handler) {
+    Router10.prototype.use = function use(handler) {
       let offset = 0;
       let path6 = "/";
       if (typeof handler !== "function") {
@@ -20695,7 +20695,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router9.prototype.route = function route(path6) {
+    Router10.prototype.route = function route(path6) {
       const route2 = new Route(path6);
       const layer = new Layer(path6, {
         sensitive: this.caseSensitive,
@@ -20710,7 +20710,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router9.prototype[method] = function(path6) {
+      Router10.prototype[method] = function(path6) {
         const route = this.route(path6);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20893,13 +20893,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router9 = require_router();
+    var Router10 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router9 = null;
+      var router10 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20908,13 +20908,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router9 === null) {
-            router9 = new Router9({
+          if (router10 === null) {
+            router10 = new Router10({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router9;
+          return router10;
         }
       });
     };
@@ -20985,15 +20985,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router9 = this.router;
+      var router10 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router9.use(path6, fn2);
+          return router10.use(path6, fn2);
         }
         debug(".use app under %s", path6);
         fn2.mountpath = path6;
         fn2.parent = this;
-        router9.use(path6, function mounted_app(req, res, next) {
+        router10.use(path6, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23520,7 +23520,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router9 = require_router();
+    var Router10 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23542,8 +23542,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router9.Route;
-    exports.Router = Router9;
+    exports.Route = Router10.Route;
+    exports.Router = Router10;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -74638,14 +74638,14 @@ var require_multer = __commonJS({
 });
 
 // src/app.ts
-var import_express9 = __toESM(require_express2(), 1);
+var import_express10 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 import path5 from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/routes/index.ts
-var import_express8 = __toESM(require_express2(), 1);
+var import_express9 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -81781,20 +81781,192 @@ ${buttons}
 });
 var subtitles_default = router7;
 
-// src/routes/index.ts
+// src/routes/timestamps.ts
+var import_express8 = __toESM(require_express2(), 1);
 var router8 = (0, import_express8.Router)();
-router8.use(health_default);
-router8.use(pexels_default);
-router8.use(pixabay_default);
-router8.use(analyze_default);
-router8.use(export_default);
-router8.use(transfers_default);
-router8.use(subtitles_default);
-var routes_default = router8;
+function timeToSeconds(ts) {
+  const normalized = ts.replace(",", ".");
+  const parts = normalized.split(":");
+  if (parts.length !== 3) return 0;
+  const hours = parseFloat(parts[0] ?? "0");
+  const minutes = parseFloat(parts[1] ?? "0");
+  const seconds = parseFloat(parts[2] ?? "0");
+  return hours * 3600 + minutes * 60 + seconds;
+}
+function extractKeywords(text) {
+  const stopwords = /* @__PURE__ */ new Set([
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "is",
+    "it",
+    "its",
+    "be",
+    "are",
+    "was",
+    "were",
+    "been",
+    "has",
+    "have",
+    "had",
+    "do",
+    "did",
+    "does",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "this",
+    "that",
+    "these",
+    "those",
+    "i",
+    "you",
+    "he",
+    "she",
+    "we",
+    "they",
+    "my",
+    "your",
+    "his",
+    "her",
+    "our",
+    "their",
+    "what",
+    "when",
+    "where",
+    "how",
+    "why",
+    "who",
+    "which",
+    "as",
+    "if",
+    "so",
+    "not",
+    "no",
+    "can",
+    "just",
+    "about",
+    "up",
+    "out",
+    "there",
+    "then",
+    "than",
+    "into",
+    "through",
+    "after",
+    "before",
+    "over",
+    "under",
+    "between",
+    "very",
+    "more",
+    "most",
+    "also",
+    "some",
+    "all",
+    "any",
+    "each",
+    "every",
+    "both"
+  ]);
+  const words = text.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter((w) => w.length > 3 && !stopwords.has(w));
+  const unique = [...new Set(words)];
+  return unique.slice(0, 4).join(", ");
+}
+router8.post("/parse-timestamps", (req, res) => {
+  const { text } = req.body;
+  if (!text || typeof text !== "string" || !text.trim()) {
+    res.status(400).json({ error: "text is required" });
+    return;
+  }
+  const blockPattern = /(?:^\d+\s*\n)?(\d{2}:\d{2}:\d{2}[,.:]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.:]\d{3})\s*\n([\s\S]*?)(?=\n\s*\n|\n\d{2}:\d{2}:\d{2}|$)/gm;
+  const rawBlocks = [];
+  let match;
+  while ((match = blockPattern.exec(text)) !== null) {
+    const start = timeToSeconds(match[1] ?? "");
+    const end = timeToSeconds(match[2] ?? "");
+    const blockText = (match[3] ?? "").trim().replace(/\n/g, " ");
+    if (blockText && end > start) {
+      rawBlocks.push({ start, end, text: blockText });
+    }
+  }
+  if (rawBlocks.length === 0) {
+    res.status(422).json({ error: "No valid timestamp blocks found. Make sure your text uses SRT format (00:00:00,000 --> 00:00:00,000)." });
+    return;
+  }
+  const merged = [];
+  let i = 0;
+  while (i < rawBlocks.length) {
+    const block = rawBlocks[i];
+    const duration = block.end - block.start;
+    if (duration < 20 && i + 1 < rawBlocks.length) {
+      const next = rawBlocks[i + 1];
+      merged.push({ start: block.start, end: next.end, text: block.text + " " + next.text });
+      i += 2;
+    } else {
+      merged.push(block);
+      i++;
+    }
+  }
+  const final = [];
+  for (const block of merged) {
+    const duration = block.end - block.start;
+    if (duration > 40) {
+      const mid = block.start + duration / 2;
+      const words = block.text.split(" ");
+      const half = Math.floor(words.length / 2);
+      final.push({ start: block.start, end: mid, text: words.slice(0, half).join(" ") });
+      final.push({ start: mid, end: block.end, text: words.slice(half).join(" ") });
+    } else {
+      final.push(block);
+    }
+  }
+  const segments = final.map((block, idx) => {
+    const duration = Math.round(block.end - block.start);
+    const keywords = extractKeywords(block.text);
+    return {
+      order_index: idx + 1,
+      text_body: block.text,
+      pexels_keywords: keywords,
+      giphy_keywords: keywords,
+      duration_estimate: `${duration}s`,
+      duration_seconds: duration
+    };
+  });
+  res.json({ segments });
+});
+var timestamps_default = router8;
+
+// src/routes/index.ts
+var router9 = (0, import_express9.Router)();
+router9.use(health_default);
+router9.use(pexels_default);
+router9.use(pixabay_default);
+router9.use(analyze_default);
+router9.use(export_default);
+router9.use(transfers_default);
+router9.use(subtitles_default);
+router9.use(timestamps_default);
+var routes_default = router9;
 
 // src/app.ts
 var __dirname2 = path5.dirname(fileURLToPath(import.meta.url));
-var app = (0, import_express9.default)();
+var app = (0, import_express10.default)();
 var rateLimitMap = /* @__PURE__ */ new Map();
 function rateLimiter(req, res, next) {
   if (req.url.includes("/subtitles/chunk")) {
@@ -81847,11 +82019,11 @@ app.use(
 );
 app.use((0, import_cors.default)(corsOptions));
 app.use(rateLimiter);
-app.use(import_express9.default.json());
-app.use(import_express9.default.urlencoded({ extended: true }));
+app.use(import_express10.default.json());
+app.use(import_express10.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
 var frontendDist = path5.resolve(__dirname2, "../../clipscout/dist/public");
-app.use(import_express9.default.static(frontendDist));
+app.use(import_express10.default.static(frontendDist));
 app.get(/.*/, (_req, res) => {
   res.sendFile(path5.join(frontendDist, "index.html"));
 });
