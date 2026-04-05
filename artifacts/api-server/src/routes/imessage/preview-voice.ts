@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import path from "path";
 import fs from "fs";
 import os from "os";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger";
+import { generateAudio } from "../../utils/kokoroTTS";
 
 const router = Router();
 
@@ -16,22 +16,11 @@ router.post("/imessage/preview-voice", async (req, res): Promise<void> => {
     return;
   }
 
-  const previewText = text || "Hey how are you doing today";
+  const previewText = text || "Hey, this is how I sound.";
   const tmpFile = path.join(os.tmpdir(), `preview_${randomUUID()}.mp3`);
 
   try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(previewText);
-
-    const writeStream = fs.createWriteStream(tmpFile);
-    audioStream.pipe(writeStream);
-
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on("finish", resolve);
-      writeStream.on("error", reject);
-      audioStream.on("error", reject);
-    });
+    await generateAudio(previewText, voice, tmpFile);
 
     if (!fs.existsSync(tmpFile)) {
       res.status(500).json({ error: "Audio file was not created" });
@@ -42,12 +31,12 @@ router.post("/imessage/preview-voice", async (req, res): Promise<void> => {
     res.setHeader("Content-Disposition", 'inline; filename="preview.mp3"');
     const stream = fs.createReadStream(tmpFile);
     stream.pipe(res);
-    stream.on("end", () => {
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-    });
+    stream.on("end", () => { try { fs.unlinkSync(tmpFile); } catch (_) {} });
   } catch (e) {
     logger.warn({ e, voice }, "Voice preview generation failed");
-    res.status(500).json({ error: "TTS generation failed" });
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+    const msg = e instanceof Error ? e.message : "TTS generation failed";
+    res.status(500).json({ error: msg });
   }
 });
 

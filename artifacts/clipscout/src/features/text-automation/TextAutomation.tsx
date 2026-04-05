@@ -1,71 +1,159 @@
-import { useState, useEffect, useRef, KeyboardEvent } from 'react';
-import { useVideoStore, type Gender, type ScriptLine, type TimelineEntry } from '@/store/use-video-store';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 import {
-  ArrowRight, ArrowLeft, CheckCircle2, Loader2, Play, Pause,
-  Download, Music, Video, Plus, Trash2, User, AlertCircle,
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Plus, Trash2, ChevronRight, ArrowLeft, Download,
+  Loader2, Play, Pause, Upload, CheckCircle2,
+  Image as ImageIcon, Video as VideoIcon, AlertCircle, Mic,
 } from 'lucide-react';
 
-type Step = 'cast' | 'script' | 'voices' | 'generate' | 'preview' | 'export';
+/* ─── Constants ─────────────────────────────────────────────────────── */
+
+const KOKORO_VOICES = [
+  { id: 'af_heart',    label: 'Heart',    accent: 'American', gender: 'Female' },
+  { id: 'af_bella',    label: 'Bella',    accent: 'American', gender: 'Female' },
+  { id: 'af_sarah',    label: 'Sarah',    accent: 'American', gender: 'Female' },
+  { id: 'af_sky',      label: 'Sky',      accent: 'American', gender: 'Female' },
+  { id: 'af_nicole',   label: 'Nicole',   accent: 'American', gender: 'Female' },
+  { id: 'am_adam',     label: 'Adam',     accent: 'American', gender: 'Male'   },
+  { id: 'am_michael',  label: 'Michael',  accent: 'American', gender: 'Male'   },
+  { id: 'bf_emma',     label: 'Emma',     accent: 'British',  gender: 'Female' },
+  { id: 'bf_isabella', label: 'Isabella', accent: 'British',  gender: 'Female' },
+  { id: 'bm_george',   label: 'George',   accent: 'British',  gender: 'Male'   },
+  { id: 'bm_lewis',    label: 'Lewis',    accent: 'British',  gender: 'Male'   },
+] as const;
+
+type KokoroVoiceId = typeof KOKORO_VOICES[number]['id'];
+
+/* ─── Types ─────────────────────────────────────────────────────────── */
+
+type Step = 'setup' | 'script' | 'preview' | 'audio' | 'done';
+
+interface Character {
+  id: string;
+  name: string;
+  voice: KokoroVoiceId;
+  isMe: boolean;
+}
+
+interface ParsedLine {
+  id: string;
+  charId: string;
+  charName: string;
+  isMe: boolean;
+  type: 'text' | 'image' | 'video';
+  text: string;
+  mediaFile?: File;
+  mediaUrl?: string;
+  mediaServerId?: string;
+}
+
+/* ─── Helpers ────────────────────────────────────────────────────────── */
+
+function uid(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function getInitials(name: string): string {
+  const words = name.trim().split(/\s+/);
+  if (words.length >= 2) {
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  }
+  const n = words[0] || '';
+  if (n.length === 0) return '?';
+  if (n.length === 1) return n.toUpperCase();
+  return (n[0] + n[n.length - 1]).toUpperCase();
+}
+
+function cn(...classes: (string | boolean | undefined | null)[]): string {
+  return classes.filter(Boolean).join(' ');
+}
+
+function parseScript(
+  raw: string,
+  chars: Character[]
+): { lines: ParsedLine[]; error: string | null } {
+  const rows = raw.split('\n').filter((l) => l.trim());
+  if (rows.length === 0) return { lines: [], error: 'Script is empty.' };
+
+  const lines: ParsedLine[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const colon = row.indexOf(':');
+    if (colon === -1) {
+      return { lines: [], error: `Line ${i + 1}: missing colon — use "Name: message"` };
+    }
+    const charName = row.slice(0, colon).trim();
+    const text = row.slice(colon + 1).trim();
+
+    const char = chars.find(
+      (c) => c.name.trim().toLowerCase() === charName.toLowerCase()
+    );
+    if (!char) {
+      return {
+        lines: [],
+        error: `Character "${charName}" not found — please add them first.`,
+      };
+    }
+    if (!text) {
+      return { lines: [], error: `Line ${i + 1}: empty message for ${charName}.` };
+    }
+
+    const lower = text.toLowerCase();
+    const type: 'text' | 'image' | 'video' =
+      lower === '[image]' ? 'image' : lower === '[video]' ? 'video' : 'text';
+
+    lines.push({
+      id: uid(),
+      charId: char.id,
+      charName: char.name,
+      isMe: char.isMe,
+      type,
+      text: type === 'text' ? text : '',
+    });
+  }
+  return { lines, error: null };
+}
+
+/* ─── StepBar ────────────────────────────────────────────────────────── */
 
 const STEPS: { id: Step; label: string }[] = [
-  { id: 'cast',     label: 'Cast'     },
-  { id: 'script',   label: 'Script'   },
-  { id: 'voices',   label: 'Voices'   },
-  { id: 'generate', label: 'Generate' },
-  { id: 'preview',  label: 'Preview'  },
-  { id: 'export',   label: 'Export'   },
+  { id: 'setup',   label: 'Cast'    },
+  { id: 'script',  label: 'Script'  },
+  { id: 'preview', label: 'Preview' },
+  { id: 'audio',   label: 'Audio'   },
+  { id: 'done',    label: 'Done'    },
 ];
-
-function cn(...c: (string | boolean | undefined | null)[]): string {
-  return c.filter(Boolean).join(' ');
-}
-
-const CHAR_COLORS = [
-  { bg: 'bg-violet-500/20', text: 'text-violet-300', dot: 'bg-violet-400' },
-  { bg: 'bg-sky-500/20',    text: 'text-sky-300',    dot: 'bg-sky-400'    },
-  { bg: 'bg-amber-500/20',  text: 'text-amber-300',  dot: 'bg-amber-400'  },
-  { bg: 'bg-rose-500/20',   text: 'text-rose-300',   dot: 'bg-rose-400'   },
-  { bg: 'bg-teal-500/20',   text: 'text-teal-300',   dot: 'bg-teal-400'   },
-  { bg: 'bg-pink-500/20',   text: 'text-pink-300',   dot: 'bg-pink-400'   },
-];
-
-function charColor(name: string, allNames: string[]) {
-  const idx = allNames.indexOf(name);
-  return CHAR_COLORS[(idx >= 0 ? idx : 0) % CHAR_COLORS.length];
-}
-
-/* ─── Step Indicator ─────────────────────────────────────────────── */
 
 function StepBar({ current }: { current: Step }) {
   const idx = STEPS.findIndex((s) => s.id === current);
   return (
     <div className="flex items-center gap-0 px-6 py-4 border-b border-white/5">
       {STEPS.map((s, i) => {
-        const past    = i < idx;
-        const active  = i === idx;
-        const future  = i > idx;
+        const past   = i < idx;
+        const active = i === idx;
         return (
           <div key={s.id} className="flex items-center flex-1 min-w-0">
             <div className="flex items-center gap-1.5 shrink-0">
               <div className={cn(
                 'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
-                active  ? 'bg-green-500 text-white'              : '',
-                past    ? 'bg-green-500/20 text-green-400'       : '',
-                future  ? 'bg-white/5 text-white/20'             : '',
+                active ? 'bg-green-500 text-white' : '',
+                past   ? 'bg-green-500/20 text-green-400' : '',
+                !active && !past ? 'bg-white/5 text-white/20' : '',
               )}>
                 {past ? <CheckCircle2 className="h-3 w-3" /> : i + 1}
               </div>
               <span className={cn(
                 'text-xs font-medium hidden sm:block',
-                active ? 'text-white'    : '',
-                past   ? 'text-green-400': '',
-                future ? 'text-white/25' : '',
+                active ? 'text-white' : '',
+                past   ? 'text-green-400' : '',
+                !active && !past ? 'text-white/25' : '',
               )}>{s.label}</span>
             </div>
             {i < STEPS.length - 1 && (
@@ -78,111 +166,154 @@ function StepBar({ current }: { current: Step }) {
   );
 }
 
-/* ─── Step 1: Cast ───────────────────────────────────────────────── */
+/* ─── VoiceLabel ─────────────────────────────────────────────────────── */
 
-interface CastMember { name: string; gender: Gender }
+function VoiceLabel({ id }: { id: string }) {
+  const v = KOKORO_VOICES.find((x) => x.id === id);
+  if (!v) return <span>{id}</span>;
+  return <span>{v.label} <span className="text-white/40">({v.accent}, {v.gender})</span></span>;
+}
 
-function CastStep({ onNext }: { onNext: () => void }) {
-  const { genderMap, setGenderMap, updateCharacter } = useVideoStore();
+/* ─── InitialsAvatar ─────────────────────────────────────────────────── */
 
-  const [cast, setCast] = useState<CastMember[]>(() =>
-    Object.keys(genderMap).length > 0
-      ? Object.entries(genderMap).map(([name, gender]) => ({ name, gender }))
-      : [{ name: '', gender: 'F' }]
+function InitialsAvatar({
+  name, isMe, size = 'md',
+}: { name: string; isMe: boolean; size?: 'sm' | 'md' | 'lg' }) {
+  const initials = getInitials(name || '?');
+  const dim = size === 'sm' ? 'w-7 h-7 text-[11px]' : size === 'lg' ? 'w-14 h-14 text-lg' : 'w-9 h-9 text-sm';
+  return (
+    <div className={cn(
+      dim, 'rounded-full flex items-center justify-center font-bold shrink-0',
+      isMe ? 'bg-green-500/20 text-green-300' : 'bg-white/10 text-white/70',
+    )}>
+      {initials}
+    </div>
   );
+}
+
+/* ─── Step 1: Setup ──────────────────────────────────────────────────── */
+
+function SetupStep({
+  characters,
+  onChange,
+  onNext,
+}: {
+  characters: Character[];
+  onChange: (chars: Character[]) => void;
+  onNext: () => void;
+}) {
   const [nameErr, setNameErr] = useState('');
 
-  const names = cast.map((c) => c.name.trim()).filter(Boolean);
-
-  const addMember = () => setCast((prev) => [...prev, { name: '', gender: 'F' }]);
-
-  const removeMember = (i: number) => {
-    if (cast.length === 1) return;
-    setCast((prev) => prev.filter((_, idx) => idx !== i));
+  const updateChar = (id: string, patch: Partial<Character>) => {
+    onChange(characters.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   };
 
-  const updateMember = (i: number, patch: Partial<CastMember>) =>
-    setCast((prev) => prev.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+  const addChar = () => {
+    onChange([...characters, { id: uid(), name: '', voice: 'am_adam', isMe: false }]);
+  };
+
+  const removeChar = (id: string) => {
+    onChange(characters.filter((c) => c.id !== id));
+  };
 
   const handleNext = () => {
-    const trimmed = cast.map((c) => ({ ...c, name: c.name.trim() }));
-    const validNames = trimmed.map((c) => c.name).filter(Boolean);
-
-    if (validNames.length < 2) { setNameErr('Add at least 2 characters.'); return; }
-    const dup = validNames.find((n, i) => validNames.indexOf(n) !== i);
+    const names = characters.map((c) => c.name.trim()).filter(Boolean);
+    if (names.length < 2) { setNameErr('Add at least 2 characters (You + one contact).'); return; }
+    const dup = names.find((n, i) => names.indexOf(n) !== i);
     if (dup) { setNameErr(`"${dup}" appears twice.`); return; }
-
-    const map: Record<string, Gender> = {};
-    trimmed.filter((c) => c.name).forEach((c) => {
-      map[c.name] = c.gender;
-      updateCharacter(c.name, { gender: c.gender, voice: c.gender === 'F' ? 'en-US-AriaNeural' : 'en-US-GuyNeural' });
-    });
-    setGenderMap(map);
+    setNameErr('');
     onNext();
   };
 
+  const them = characters.filter((c) => !c.isMe);
+  const me   = characters.find((c) => c.isMe)!;
+
   return (
-    <div className="p-8 max-w-xl mx-auto space-y-6">
+    <div className="p-8 max-w-2xl mx-auto space-y-7">
       <div>
-        <h2 className="text-xl font-semibold text-white">Define your cast</h2>
-        <p className="text-sm text-white/40 mt-1">Add everyone who appears in the conversation.</p>
+        <h2 className="text-xl font-semibold text-white">Set up your cast</h2>
+        <p className="text-sm text-white/40 mt-1">Define who is in the conversation and pick their voice.</p>
       </div>
 
-      <div className="space-y-3">
-        {cast.map((member, i) => {
-          const col = charColor(member.name || '?', names);
-          return (
-            <div key={i} className="flex items-center gap-3">
-              {/* Avatar letter */}
-              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0', col.bg, col.text)}>
-                {member.name?.[0]?.toUpperCase() || <User className="h-4 w-4 opacity-30" />}
-              </div>
+      {/* You */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">You (sender)</p>
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/5 border border-green-500/20">
+          <InitialsAvatar name={me.name || 'You'} isMe={true} />
+          <Input
+            value={me.name}
+            onChange={(e) => { updateChar(me.id, { name: e.target.value }); setNameErr(''); }}
+            placeholder="Your name (e.g. Maria)"
+            className="flex-1 bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-sm"
+          />
+          <Select
+            value={me.voice}
+            onValueChange={(v) => updateChar(me.id, { voice: v as KokoroVoiceId })}
+          >
+            <SelectTrigger className="w-44 h-9 text-xs bg-white/5 border-white/10 text-white shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a1a] border-white/10 max-h-48">
+              {KOKORO_VOICES.map((v) => (
+                <SelectItem key={v.id} value={v.id} className="text-xs text-white/80">
+                  {v.label} <span className="text-white/40">({v.accent}, {v.gender[0]})</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
-              {/* Name */}
+      {/* Contacts */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Who are you texting?</p>
+        <div className="space-y-2">
+          {them.map((char, i) => (
+            <div key={char.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/4 border border-white/6">
+              <InitialsAvatar name={char.name || '?'} isMe={false} />
               <Input
-                value={member.name}
-                onChange={(e) => { updateMember(i, { name: e.target.value }); setNameErr(''); }}
-                placeholder="Name (e.g. Maria)"
-                className="flex-1 bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-sm focus:border-green-500/50"
-                onKeyDown={(e: KeyboardEvent) => e.key === 'Enter' && addMember()}
+                value={char.name}
+                onChange={(e) => { updateChar(char.id, { name: e.target.value }); setNameErr(''); }}
+                placeholder={i === 0 ? 'Contact name (e.g. Kaleb)' : 'Character name'}
+                className="flex-1 bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-sm"
               />
-
-              {/* Gender toggle */}
-              <div className="flex rounded-lg overflow-hidden border border-white/10 shrink-0">
-                {(['F', 'M'] as Gender[]).map((g) => (
-                  <button
-                    key={g}
-                    onClick={() => updateMember(i, { gender: g })}
-                    className={cn(
-                      'px-3 py-1.5 text-xs font-medium transition-colors',
-                      member.gender === g
-                        ? g === 'F' ? 'bg-pink-500/20 text-pink-300' : 'bg-blue-500/20 text-blue-300'
-                        : 'text-white/30 hover:text-white/50'
-                    )}
-                  >
-                    {g === 'F' ? '♀ Female' : '♂ Male'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Remove */}
-              <button
-                onClick={() => removeMember(i)}
-                className={cn('text-white/20 hover:text-red-400 transition-colors', cast.length === 1 && 'invisible')}
+              <Select
+                value={char.voice}
+                onValueChange={(v) => updateChar(char.id, { voice: v as KokoroVoiceId })}
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
+                <SelectTrigger className="w-44 h-9 text-xs bg-white/5 border-white/10 text-white shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border-white/10 max-h-48">
+                  {KOKORO_VOICES.map((v) => (
+                    <SelectItem key={v.id} value={v.id} className="text-xs text-white/80">
+                      {v.label} <span className="text-white/40">({v.accent}, {v.gender[0]})</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {them.length > 1 && (
+                <button
+                  onClick={() => removeChar(char.id)}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-red-500/20 flex items-center justify-center text-white/30 hover:text-red-400 transition-colors shrink-0"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      <button
-        onClick={addMember}
-        className="flex items-center gap-2 text-sm text-white/40 hover:text-green-400 transition-colors"
-      >
-        <Plus className="h-4 w-4" /> Add character
-      </button>
+        <button
+          onClick={addChar}
+          className="flex items-center gap-2 text-sm text-white/40 hover:text-white/70 transition-colors mt-1"
+        >
+          <div className="w-7 h-7 rounded-full border border-dashed border-white/20 flex items-center justify-center">
+            <Plus className="h-3.5 w-3.5" />
+          </div>
+          Add another character
+        </button>
+      </div>
 
       {nameErr && (
         <p className="flex items-center gap-2 text-red-400 text-sm">
@@ -192,107 +323,87 @@ function CastStep({ onNext }: { onNext: () => void }) {
 
       <div className="flex justify-end pt-2">
         <Button onClick={handleNext} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
-          Next <ArrowRight className="ml-2 h-3.5 w-3.5" />
+          Next: Write Script <ChevronRight className="ml-1 h-4 w-4" />
         </Button>
       </div>
     </div>
   );
 }
 
-/* ─── Step 2: Script ─────────────────────────────────────────────── */
+/* ─── Step 2: Script ─────────────────────────────────────────────────── */
 
-function parseScriptLines(
-  raw: string,
-  genderMap: Record<string, Gender>
-): { lines: ScriptLine[]; error: string | null } {
-  try {
-    const textLines = raw.split('\n').filter((l) => l.trim());
-    const lines: ScriptLine[] = [];
-    for (let i = 0; i < textLines.length; i++) {
-      const line = textLines[i];
-      const colon = line.indexOf(':');
-      if (colon === -1) throw new Error(`Line ${i + 1}: missing colon — use "Name: message"`);
-      const character = line.substring(0, colon).trim();
-      const text = line.substring(colon + 1).trim();
-      if (!genderMap[character]) throw new Error(`"${character}" isn't in your cast.`);
-      if (!text) throw new Error(`Line ${i + 1}: empty message for ${character}.`);
-      lines.push({ index: i, character, text });
-    }
-    return { lines, error: null };
-  } catch (e: unknown) {
-    return { lines: [], error: (e as Error).message };
-  }
-}
+function ScriptStep({
+  characters,
+  initialScript,
+  onParsed,
+  onBack,
+}: {
+  characters: Character[];
+  initialScript: string;
+  onParsed: (lines: ParsedLine[], script: string) => void;
+  onBack: () => void;
+}) {
+  const [text, setText] = useState(initialScript);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ParsedLine[]>([]);
 
-function ScriptStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const { scriptText, genderMap, setScriptText, setParsedLines } = useVideoStore();
-  const names = Object.keys(genderMap);
+  const me = characters.find((c) => c.isMe);
+  const contact = characters.find((c) => !c.isMe);
 
-  const [local, setLocal] = useState(
-    scriptText ||
-    names.slice(0, 2).map((n, i) => (i === 0
-      ? `${n}: Hey! Are we still on for tonight?`
-      : `${n}: Yeah definitely, 7pm works.`
-    )).join('\n')
-  );
+  const placeholderLines = [
+    `${me?.name || 'You'}: hey you free later?`,
+    `${contact?.name || 'Kaleb'}: yeah why whats up`,
+    `${me?.name || 'You'}: [image]`,
+    `${contact?.name || 'Kaleb'}: [video]`,
+  ];
 
-  const { lines, error } = parseScriptLines(local, genderMap);
+  useEffect(() => {
+    if (!text.trim()) { setPreview([]); setError(null); return; }
+    const { lines, error: err } = parseScript(text, characters);
+    if (err) { setError(err); setPreview([]); }
+    else { setError(null); setPreview(lines); }
+  }, [text, characters]);
 
-  const handleNext = () => {
-    if (error || lines.length === 0) return;
-    setScriptText(local);
-    setParsedLines(lines);
-    onNext();
+  const handleProcess = () => {
+    const { lines, error: err } = parseScript(text, characters);
+    if (err) { setError(err); return; }
+    if (lines.length === 0) { setError('Script is empty.'); return; }
+    onParsed(lines, text);
   };
-
-  const insertName = (name: string) => {
-    setLocal((prev) => {
-      const parts = prev.split('\n');
-      const last = parts[parts.length - 1] || '';
-      if (!last.trim()) {
-        parts[parts.length - 1] = `${name}: `;
-      } else {
-        parts.push(`${name}: `);
-      }
-      return parts.join('\n');
-    });
-  };
-
-  const allNames = Object.keys(genderMap);
 
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-5">
+    <div className="p-8 max-w-4xl mx-auto space-y-5">
       <div>
         <h2 className="text-xl font-semibold text-white">Write the script</h2>
-        <p className="text-sm text-white/40 mt-1">Each line: <code className="text-green-400 text-xs">Name: message</code></p>
+        <p className="text-sm text-white/40 mt-1">
+          Each line: <code className="text-green-400 text-xs">Name: message</code>{' '}
+          — use <code className="text-blue-400 text-xs">[image]</code> or{' '}
+          <code className="text-blue-400 text-xs">[video]</code> for media.
+        </p>
       </div>
 
-      {/* Cast pill shortcuts */}
+      {/* Character pills */}
       <div className="flex flex-wrap gap-2">
-        {names.map((name) => {
-          const col = charColor(name, allNames);
-          return (
-            <button
-              key={name}
-              onClick={() => insertName(name)}
-              className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-opacity hover:opacity-80', col.bg, col.text)}
-            >
-              <span className={cn('w-1.5 h-1.5 rounded-full', col.dot)} />
-              {name}
-            </button>
-          );
-        })}
-        <span className="text-xs text-white/25 self-center">← click to insert</span>
+        {characters.map((c) => (
+          <div key={c.id} className={cn(
+            'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
+            c.isMe ? 'bg-green-500/20 text-green-300' : 'bg-white/10 text-white/70',
+          )}>
+            <span className={cn('w-1.5 h-1.5 rounded-full', c.isMe ? 'bg-green-400' : 'bg-white/40')} />
+            {c.name || '(unnamed)'}{' '}
+            <span className="opacity-50">— <VoiceLabel id={c.voice} /></span>
+          </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         {/* Textarea */}
-        <div className="lg:col-span-3 space-y-2">
+        <div className="lg:col-span-3 space-y-3">
           <Textarea
-            value={local}
-            onChange={(e) => setLocal(e.target.value)}
-            className="min-h-72 bg-white/3 border-white/8 text-white font-mono text-sm resize-none leading-relaxed focus:border-green-500/40"
-            placeholder={names.slice(0,2).map((n,i)=>`${n}: ${i===0?'Hey!':'Hi there!'}`).join('\n')}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={placeholderLines.join('\n')}
+            className="min-h-[300px] bg-white/3 border-white/8 text-white font-mono text-sm resize-none leading-relaxed focus:border-green-500/40"
             spellCheck={false}
           />
           {error && (
@@ -300,37 +411,60 @@ function ScriptStep({ onNext, onBack }: { onNext: () => void; onBack: () => void
               <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {error}
             </p>
           )}
+          <Button
+            onClick={handleProcess}
+            disabled={!text.trim() || !!error}
+            className="bg-green-600 hover:bg-green-700 h-9 text-sm w-full"
+          >
+            Process Script →
+          </Button>
         </div>
 
         {/* Live preview */}
         <div className="lg:col-span-2">
-          <div className="rounded-xl border border-white/8 bg-white/3 overflow-hidden h-72 flex flex-col">
+          <div className="rounded-xl border border-white/8 bg-white/3 overflow-hidden h-[340px] flex flex-col">
             <div className="px-3 py-2 border-b border-white/5">
-              <p className="text-xs text-white/30 font-medium uppercase tracking-wider">Preview</p>
+              <p className="text-xs text-white/30 font-medium uppercase tracking-wider">Live Preview</p>
             </div>
-            <div className="flex-1 overflow-auto p-3 space-y-2">
-              {lines.length === 0
+            <div className="flex-1 overflow-auto p-3 space-y-1.5">
+              {preview.length === 0
                 ? <p className="text-xs text-white/20 text-center mt-8">Start typing…</p>
-                : lines.map((line, i) => {
-                    const isFirst = line.character === lines[0].character;
-                    const col = charColor(line.character, allNames);
-                    return (
-                      <div key={i} className={cn('flex', isFirst ? 'justify-end' : 'justify-start')}>
+                : preview.map((line) => (
+                    <div key={line.id} className={cn('flex', line.isMe ? 'justify-end' : 'justify-start')}>
+                      {!line.isMe && (
+                        <div className="mr-1.5 mt-auto">
+                          <InitialsAvatar name={line.charName} isMe={false} size="sm" />
+                        </div>
+                      )}
+                      <div className="max-w-[75%]">
+                        {!line.isMe && (
+                          <p className="text-[10px] text-white/40 mb-0.5 ml-1">{line.charName}</p>
+                        )}
                         <div className={cn(
-                          'rounded-2xl px-2.5 py-1.5 text-xs max-w-[78%]',
-                          isFirst
-                            ? 'bg-green-600/80 text-white rounded-br-sm'
-                            : cn('bg-white/8 text-white/80 rounded-bl-sm')
+                          'px-2.5 py-1.5 rounded-2xl text-xs leading-snug',
+                          line.isMe
+                            ? 'bg-[#34c759] text-white rounded-br-sm'
+                            : 'bg-white/12 text-white/80 rounded-bl-sm',
                         )}>
-                          {line.text}
+                          {line.type === 'image' && (
+                            <span className="flex items-center gap-1 text-white/60">
+                              <ImageIcon className="h-3 w-3" /> [image]
+                            </span>
+                          )}
+                          {line.type === 'video' && (
+                            <span className="flex items-center gap-1 text-white/60">
+                              <VideoIcon className="h-3 w-3" /> [video]
+                            </span>
+                          )}
+                          {line.type === 'text' && line.text}
                         </div>
                       </div>
-                    );
-                  })
+                    </div>
+                  ))
               }
             </div>
           </div>
-          <p className="text-xs text-white/25 text-right mt-1">{lines.length} lines</p>
+          <p className="text-xs text-white/25 text-right mt-1">{preview.length} messages</p>
         </div>
       </div>
 
@@ -338,558 +472,553 @@ function ScriptStep({ onNext, onBack }: { onNext: () => void; onBack: () => void
         <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
           <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
         </Button>
-        <Button onClick={handleNext} disabled={!!error || lines.length === 0} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
-          Next <ArrowRight className="ml-2 h-3.5 w-3.5" />
-        </Button>
       </div>
     </div>
   );
 }
 
-/* ─── Step 3: Voices ─────────────────────────────────────────────── */
+/* ─── Typing Indicator ────────────────────────────────────────────────── */
 
-function VoicesStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const { genderMap, characters, updateCharacter, settings, setSettings,
-          backgroundVideoId, backgroundMusicId, setBackgroundVideoId, setBackgroundMusicId } = useVideoStore();
-  const [voices, setVoices] = useState<Array<{ shortName: string; gender: string; locale: string }>>([]);
-  const [loading, setLoading] = useState(false);
-  const [playing, setPlaying] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const allNames = Object.keys(genderMap);
+function TypingIndicator({ isMe }: { isMe: boolean }) {
+  return (
+    <div className={cn('flex', isMe ? 'justify-end' : 'justify-start', 'px-4 py-1')}>
+      <div className={cn(
+        'flex items-center gap-1 px-3 py-2 rounded-2xl',
+        isMe ? 'bg-[#34c759] rounded-br-sm' : 'bg-[#E5E5EA] rounded-bl-sm',
+      )}>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className={cn('w-1.5 h-1.5 rounded-full animate-bounce', isMe ? 'bg-white/60' : 'bg-gray-500/60')}
+            style={{ animationDelay: `${i * 0.15}s` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Step 3: Preview ────────────────────────────────────────────────── */
+
+function PreviewStep({
+  characters,
+  lines,
+  onLinesChange,
+  onGenerate,
+  onBack,
+}: {
+  characters: Character[];
+  lines: ParsedLine[];
+  onLinesChange: (lines: ParsedLine[]) => void;
+  onGenerate: () => void;
+  onBack: () => void;
+}) {
+  const [visibleCount, setVisibleCount] = useState(lines.length);
+  const [playing, setPlaying] = useState(false);
+  const [showTyping, setShowTyping] = useState(false);
+  const [typingIsMe, setTypingIsMe] = useState(false);
+  const playRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const mediaInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const contact = characters.find((c) => !c.isMe);
 
   useEffect(() => {
-    setLoading(true);
-    fetch('/api/imessage/voices')
-      .then((r) => r.json())
-      .then((d) => setVoices(d.voices || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [visibleCount, showTyping]);
 
-  const preview = async (voice: string) => {
-    if (playing === voice) { audioRef.current?.pause(); setPlaying(null); return; }
+  const playSequence = useCallback((idx: number) => {
+    if (!playRef.current || idx >= lines.length) {
+      setPlaying(false);
+      setShowTyping(false);
+      playRef.current = false;
+      return;
+    }
+    const line = lines[idx];
+    setShowTyping(true);
+    setTypingIsMe(line.isMe);
+    timerRef.current = setTimeout(() => {
+      if (!playRef.current) return;
+      setShowTyping(false);
+      setVisibleCount(idx + 1);
+      timerRef.current = setTimeout(() => {
+        if (playRef.current) playSequence(idx + 1);
+      }, 400);
+    }, 900);
+  }, [lines]);
+
+  const togglePlay = () => {
+    if (playing) {
+      playRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setPlaying(false);
+      setShowTyping(false);
+    } else {
+      setVisibleCount(0);
+      playRef.current = true;
+      setPlaying(true);
+      timerRef.current = setTimeout(() => playSequence(0), 300);
+    }
+  };
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  const handleMediaUpload = async (lineId: string, file: File) => {
+    const url = URL.createObjectURL(file);
+    onLinesChange(lines.map((l) =>
+      l.id === lineId ? { ...l, mediaFile: file, mediaUrl: url } : l
+    ));
+
+    const form = new FormData();
+    form.append('file', file);
     try {
-      const res = await fetch('/api/imessage/preview-voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voice, text: 'Hey, this is how I sound.' }),
-      });
-      const blob = await res.blob();
-      audioRef.current?.pause();
-      const audio = new Audio(URL.createObjectURL(blob));
-      audioRef.current = audio;
-      setPlaying(voice);
-      audio.play();
-      audio.onended = () => setPlaying(null);
+      const res = await fetch('/api/conversation/upload-media', { method: 'POST', body: form });
+      const data = await res.json() as { mediaId?: string };
+      if (data.mediaId) {
+        onLinesChange(lines.map((l) =>
+          l.id === lineId ? { ...l, mediaFile: file, mediaUrl: `/api/conversation/media/${data.mediaId}`, mediaServerId: data.mediaId } : l
+        ));
+      }
     } catch (_) {}
   };
 
-  const uploadFile = async (file: File, type: string) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('type', type);
-    const res = await fetch('/api/imessage/upload', { method: 'POST', body: form });
-    return res.json();
-  };
+  const visibleLines = lines.slice(0, visibleCount);
+  const nextLine = lines[visibleCount] ?? null;
+
+  const hasMedia = lines.some((l) => l.type !== 'text');
+  const missingMedia = lines.filter((l) => l.type !== 'text' && !l.mediaUrl);
 
   return (
-    <div className="p-8 max-w-2xl mx-auto space-y-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-5">
       <div>
-        <h2 className="text-xl font-semibold text-white">Voices & settings</h2>
-        <p className="text-sm text-white/40 mt-1">Pick a voice for each character, then set the video style.</p>
+        <h2 className="text-xl font-semibold text-white">Preview</h2>
+        <p className="text-sm text-white/40 mt-1">
+          {hasMedia ? 'Upload media for image/video slots, then ' : ''}
+          Hit play to animate, then generate audio.
+        </p>
       </div>
 
-      {/* Characters */}
-      <div className="space-y-3">
-        {allNames.map((name) => {
-          const char = characters[name] || {};
-          const col = charColor(name, allNames);
-          const charVoices = voices.filter((v) => v.gender === (genderMap[name] === 'F' ? 'Female' : 'Male'));
-          return (
-            <div key={name} className="flex items-center gap-3 p-3 rounded-xl bg-white/4 border border-white/6">
-              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0', col.bg, col.text)}>
-                {name[0].toUpperCase()}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Phone mockup */}
+        <div className="mx-auto w-64">
+          <div className="rounded-3xl overflow-hidden border-2 border-white/15 bg-white shadow-2xl">
+            {/* Status bar */}
+            <div className="bg-white px-5 pt-3 pb-1 flex justify-between items-center">
+              <span className="text-[10px] font-semibold text-black">9:41</span>
+              <div className="flex items-center gap-1">
+                <div className="w-4 h-2 border border-black/40 rounded-[2px] relative">
+                  <div className="absolute inset-0.5 left-0.5 bg-black rounded-[1px]" style={{ width: '70%' }} />
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white mb-1">{name}</p>
-                <Select
-                  value={char.voice || ''}
-                  onValueChange={(v) => updateCharacter(name, { voice: v })}
-                  disabled={loading}
-                >
-                  <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10 text-white">
-                    <SelectValue placeholder={loading ? 'Loading…' : 'Select voice'} />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#1a1a1a] border-white/10 max-h-44">
-                    {charVoices.map((v) => (
-                      <SelectItem key={v.shortName} value={v.shortName} className="text-xs text-white/80">
-                        {v.shortName.split('-').slice(2).join('-')}
-                        <span className="text-white/30 ml-1">({v.locale})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <button
-                onClick={() => preview(char.voice || '')}
-                disabled={!char.voice}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-green-500/20 flex items-center justify-center text-white/50 hover:text-green-400 transition-colors disabled:opacity-30"
-              >
-                {playing === char.voice ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 ml-0.5" />}
-              </button>
             </div>
-          );
-        })}
-      </div>
 
-      {/* Video settings */}
-      <div className="rounded-xl border border-white/6 bg-white/3 p-4 space-y-4">
-        <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Video style</p>
+            {/* iMessage header */}
+            <div className="bg-white border-b border-gray-200 px-3 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <button className="flex items-center gap-0.5 text-[#007AFF] text-sm font-medium">
+                  <span className="text-lg leading-none">‹</span>
+                  <span className="text-xs font-bold bg-[#007AFF] text-white rounded-full px-1.5 py-0.5 ml-0.5">99+</span>
+                </button>
+                <div className="flex items-center gap-1">
+                  <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-bold text-gray-600">
+                    {getInitials(contact?.name || '?')}
+                  </div>
+                </div>
+                <button className="text-[#007AFF] text-sm">
+                  <VideoIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="text-center">
+                <p className="text-xs font-semibold text-black flex items-center justify-center gap-0.5">
+                  {contact?.name || 'Contact'}
+                  <ChevronRight className="h-3 w-3 text-gray-400" />
+                </p>
+              </div>
+            </div>
 
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-white/70">Dark chat theme</span>
-          <Switch checked={settings.darkMode} onCheckedChange={(v) => setSettings({ darkMode: v })} />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-white/70">Show phone frame</span>
-          <Switch checked={settings.showFrame} onCheckedChange={(v) => setSettings({ showFrame: v })} />
-        </div>
-
-        <div className="space-y-2">
-          <span className="text-sm text-white/70">Format</span>
-          <div className="grid grid-cols-2 gap-2 mt-1.5">
-            {(['9:16', '16:9'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setSettings({ format: f })}
-                className={cn(
-                  'py-2 rounded-lg border text-xs font-medium transition-all',
-                  settings.format === f
-                    ? 'border-green-500/50 bg-green-500/10 text-green-400'
-                    : 'border-white/8 text-white/30 hover:border-white/20 hover:text-white/50'
+            {/* Messages */}
+            <div className="bg-white h-80 overflow-auto flex flex-col py-2">
+              <div className="flex-1 space-y-0.5 px-2">
+                {visibleLines.map((line) => (
+                  <div key={line.id}>
+                    {!line.isMe && (
+                      <p className="text-[9px] text-gray-400 ml-8 mb-0.5">{line.charName}</p>
+                    )}
+                    <div className={cn('flex items-end gap-1', line.isMe ? 'justify-end' : 'justify-start')}>
+                      {!line.isMe && (
+                        <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[8px] font-bold text-gray-600 shrink-0 mb-0.5">
+                          {getInitials(line.charName)}
+                        </div>
+                      )}
+                      <div className={cn(
+                        'max-w-[72%] px-2.5 py-1.5 rounded-2xl text-[11px] leading-snug',
+                        line.isMe
+                          ? 'bg-[#34c759] text-white rounded-br-sm'
+                          : 'bg-[#E5E5EA] text-black rounded-bl-sm',
+                      )}>
+                        {line.type === 'text' && line.text}
+                        {line.type === 'image' && (
+                          line.mediaUrl
+                            ? <img src={line.mediaUrl} alt="uploaded" className="rounded-lg max-w-full max-h-32 object-cover" />
+                            : <span className="flex items-center gap-1 text-current opacity-60 text-[10px]"><ImageIcon className="h-3 w-3" /> image</span>
+                        )}
+                        {line.type === 'video' && (
+                          line.mediaUrl
+                            ? <video src={line.mediaUrl} autoPlay muted loop playsInline className="rounded-lg max-w-full max-h-32 object-cover" />
+                            : <span className="flex items-center gap-1 text-current opacity-60 text-[10px]"><VideoIcon className="h-3 w-3" /> video</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {showTyping && nextLine && (
+                  <TypingIndicator isMe={typingIsMe} />
                 )}
-              >
-                {f === '9:16' ? '9∶16 — Vertical' : '16∶9 — Landscape'}
-              </button>
-            ))}
+                <div ref={endRef} />
+              </div>
+
+              {/* iOS-style input area */}
+              <div className="border-t border-gray-200 mt-auto mx-2 pt-2 flex items-center gap-2 opacity-40">
+                <div className="flex-1 bg-gray-100 rounded-full px-3 py-1 text-[10px] text-gray-400">iMessage</div>
+                <div className="w-5 h-5 rounded-full bg-[#34c759] flex items-center justify-center">
+                  <span className="text-white text-[8px] font-bold">↑</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Controls below phone */}
+          <div className="flex items-center justify-center gap-3 mt-4">
+            <button
+              onClick={togglePlay}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors',
+                playing
+                  ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                  : 'bg-white/10 text-white/70 hover:bg-white/15',
+              )}
+            >
+              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              {playing ? 'Stop' : 'Play'}
+            </button>
+            <button
+              onClick={() => setVisibleCount(lines.length)}
+              className="px-4 py-2 rounded-full text-sm text-white/40 hover:text-white/60 transition-colors"
+            >
+              Show all
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Media uploads */}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { icon: Video, label: 'Background video', sub: 'MP4 gameplay / nature', type: 'background_video', accept: 'video/mp4', uploaded: !!backgroundVideoId, onUpload: (fid: string) => setBackgroundVideoId(fid) },
-          { icon: Music, label: 'Background music', sub: 'MP3 lo-fi / trending', type: 'background_music', accept: 'audio/*', uploaded: !!backgroundMusicId, onUpload: (fid: string) => setBackgroundMusicId(fid) },
-        ].map(({ icon: Icon, label, sub, type, accept, uploaded, onUpload }) => (
-          <label key={label} className={cn(
-            'relative flex flex-col items-center gap-2 p-4 rounded-xl border border-dashed cursor-pointer transition-colors',
-            uploaded ? 'border-green-500/40 bg-green-500/5' : 'border-white/10 bg-white/3 hover:border-white/20'
-          )}>
-            <Icon className={cn('h-5 w-5', uploaded ? 'text-green-400' : 'text-white/30')} />
-            <div className="text-center">
-              <p className={cn('text-xs font-medium', uploaded ? 'text-green-400' : 'text-white/50')}>{uploaded ? 'Uploaded ✓' : label}</p>
-              {!uploaded && <p className="text-[10px] text-white/25 mt-0.5">{sub}</p>}
+        {/* Right panel: media uploads + actions */}
+        <div className="space-y-4">
+          {/* Media upload slots */}
+          {hasMedia && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Media slots</p>
+              {lines.filter((l) => l.type !== 'text').map((line, i) => (
+                <div key={line.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/4 border border-white/8">
+                  <div className={cn(
+                    'w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                    line.type === 'image' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400',
+                  )}>
+                    {line.type === 'image' ? <ImageIcon className="h-4 w-4" /> : <VideoIcon className="h-4 w-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white/70 truncate">
+                      Message {lines.indexOf(line) + 1} — {line.charName}'s {line.type}
+                    </p>
+                    {line.mediaUrl && (
+                      <p className="text-[10px] text-green-400 mt-0.5">✓ Uploaded</p>
+                    )}
+                  </div>
+                  <label className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors',
+                    line.mediaUrl
+                      ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                      : 'bg-white/10 text-white/60 hover:bg-white/15',
+                  )}>
+                    <Upload className="h-3 w-3" />
+                    {line.mediaUrl ? 'Replace' : 'Upload'}
+                    <input
+                      ref={(el) => { mediaInputRefs.current[line.id] = el; }}
+                      type="file"
+                      accept={line.type === 'image' ? 'image/*' : 'video/*'}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleMediaUpload(line.id, f);
+                      }}
+                    />
+                  </label>
+                </div>
+              ))}
+              {missingMedia.length > 0 && (
+                <p className="text-xs text-amber-400 flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {missingMedia.length} media slot{missingMedia.length > 1 ? 's' : ''} still need{missingMedia.length === 1 ? 's' : ''} a file (optional).
+                </p>
+              )}
             </div>
-            <input
-              type="file"
-              accept={accept}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const data = await uploadFile(file, type);
-                if (data.fileId) onUpload(data.fileId);
-              }}
-            />
-          </label>
-        ))}
+          )}
+
+          {/* Script summary */}
+          <div className="rounded-xl border border-white/8 bg-white/3 p-4 space-y-2">
+            <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Summary</p>
+            <div className="space-y-1.5 max-h-40 overflow-auto">
+              {lines.map((line, i) => (
+                <div key={line.id} className="flex items-center gap-2 text-xs">
+                  <div className={cn(
+                    'w-1.5 h-1.5 rounded-full shrink-0',
+                    line.isMe ? 'bg-green-400' : 'bg-white/30',
+                  )} />
+                  <span className={cn('w-16 truncate font-medium shrink-0', line.isMe ? 'text-green-300' : 'text-white/60')}>
+                    {line.charName}
+                  </span>
+                  <span className="text-white/30 truncate">
+                    {line.type === 'text'
+                      ? `"${line.text.substring(0, 30)}${line.text.length > 30 ? '…' : ''}"`
+                      : `[${line.type}]`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-white/25 pt-1">{lines.filter(l => l.type === 'text').length} voice lines · {lines.filter(l => l.type !== 'text').length} media slots</p>
+          </div>
+
+          {/* Generate audio button */}
+          <Button
+            onClick={onGenerate}
+            className="w-full bg-green-600 hover:bg-green-700 h-10 text-sm"
+          >
+            <Mic className="mr-2 h-4 w-4" />
+            Generate Audio
+          </Button>
+        </div>
       </div>
 
-      <div className="flex justify-between pt-1">
+      <div className="flex justify-between pt-2">
         <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
           <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
-        </Button>
-        <Button onClick={onNext} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
-          Generate audio <ArrowRight className="ml-2 h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
   );
 }
 
-/* ─── Step 4: Generate ───────────────────────────────────────────── */
+/* ─── Step 4: Audio ──────────────────────────────────────────────────── */
 
-function GenerateStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const { parsedLines, characters, jobId, setJobId, setTimeline } = useVideoStore();
-  const [progress, setProgress] = useState<{ completed: number; total: number; status: string; durations: Record<number, number> } | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+function AudioStep({
+  lines,
+  characters,
+  onDone,
+  onBack,
+}: {
+  lines: ParsedLine[];
+  characters: Character[];
+  onDone: (jobId: string) => void;
+  onBack: () => void;
+}) {
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ status: string; completed: number; total: number; errorMessage?: string } | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
   const started = useRef(false);
-  const allNames = [...new Set(parsedLines.map((l) => l.character))];
-
-  const buildTimeline = (durations: Record<number, number>) => {
-    let t = 0;
-    const timeline: TimelineEntry[] = parsedLines.map((line) => {
-      const dur = (durations[line.index] ?? 2) * 1000;
-      const entry: TimelineEntry = { lineIndex: line.index, startTime: t, duration: dur, type: 'text' };
-      t += dur + 700;
-      return entry;
-    });
-    setTimeline(timeline);
-  };
 
   useEffect(() => {
-    const start = async () => {
-      if (started.current || jobId) return;
-      started.current = true;
-      const payload = parsedLines.map((l) => ({
-        index: l.index,
-        character: l.character,
-        text: l.text,
-        voice: characters[l.character]?.voice || 'en-US-AriaNeural',
-      }));
-      try {
-        const res = await fetch('/api/imessage/generate-audio', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lines: payload }),
-        });
-        const data = await res.json();
-        setJobId(data.jobId);
-      } catch (_) { setErr('Failed to start audio generation.'); }
-    };
-    start();
+    if (started.current) return;
+    started.current = true;
+
+    const payload = lines
+      .filter((l) => l.type === 'text')
+      .map((l) => {
+        const char = characters.find((c) => c.id === l.charId);
+        return { text: l.text, voice: char?.voice ?? 'af_heart', type: 'text' as const };
+      });
+
+    fetch('/api/conversation/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lines: payload }),
+    })
+      .then((r) => r.json())
+      .then((d: { jobId?: string; error?: string }) => {
+        if (d.error) { setStartError(d.error); return; }
+        if (d.jobId) setJobId(d.jobId);
+      })
+      .catch((e) => setStartError(String(e)));
   }, []);
 
   useEffect(() => {
     if (!jobId) return;
     const iv = setInterval(async () => {
-      const res = await fetch(`/api/imessage/audio-progress/${jobId}`);
-      const data = await res.json();
+      const res = await fetch(`/api/conversation/progress/${jobId}`);
+      const data = await res.json() as { status: string; completed: number; total: number; errorMessage?: string };
       setProgress(data);
-      if (data.status === 'done') { clearInterval(iv); buildTimeline(data.durations || {}); }
-      if (data.status === 'error') { clearInterval(iv); setErr('Audio generation failed.'); }
-    }, 800);
+      if (data.status === 'done') { clearInterval(iv); onDone(jobId); }
+      if (data.status === 'error') clearInterval(iv);
+    }, 1000);
     return () => clearInterval(iv);
   }, [jobId]);
 
-  const total   = progress?.total   || parsedLines.length || 1;
-  const done    = progress?.completed || 0;
-  const pct     = Math.min(100, Math.round((done / total) * 100));
-  const isDone  = progress?.status === 'done';
+  const total    = progress?.total ?? lines.filter(l => l.type === 'text').length;
+  const done     = progress?.completed ?? 0;
+  const pct      = total > 0 ? Math.min(99, Math.round((done / total) * 100)) : 0;
+  const isDone   = progress?.status === 'done';
+  const isError  = progress?.status === 'error';
 
   return (
     <div className="p-8 max-w-lg mx-auto space-y-6">
       <div className="text-center space-y-1">
         <h2 className="text-xl font-semibold text-white">Generating audio</h2>
-        <p className="text-sm text-white/40">Synthesising voices for {allNames.join(', ')}…</p>
+        <p className="text-sm text-white/40">Synthesising voices via Kokoro TTS…</p>
       </div>
 
-      <div className="rounded-xl border border-white/6 bg-white/3 p-5 space-y-5">
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-white/50">{isDone ? 'All done!' : 'Processing…'}</span>
-            <span className="text-green-400 font-semibold">{pct}%</span>
+      {startError ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 text-center space-y-3">
+          <AlertCircle className="h-8 w-8 text-red-400 mx-auto" />
+          <p className="text-sm text-red-400">{startError}</p>
+          {startError.includes('HUGGINGFACE_API_KEY') && (
+            <p className="text-xs text-white/40">Add your HUGGINGFACE_API_KEY to the environment secrets.</p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-white/6 bg-white/3 p-5 space-y-5">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-white/50">
+                {isError ? 'Failed' : isDone ? 'Done!' : !jobId ? 'Starting…' : 'Processing…'}
+              </span>
+              <span className="text-green-400 font-semibold">{pct}%</span>
+            </div>
+            <Progress value={isDone ? 100 : pct} className="h-1.5" />
+            <p className="text-xs text-white/25 text-right">{done} / {total} lines</p>
           </div>
-          <Progress value={pct} className="h-1.5" />
-          <p className="text-xs text-white/25 text-right">{done} / {total} lines</p>
-        </div>
 
-        {err && (
-          <p className="flex items-center gap-2 text-red-400 text-sm">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {err}
-          </p>
-        )}
+          {isError && (
+            <p className="flex items-center gap-2 text-red-400 text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {progress?.errorMessage || 'Audio generation failed.'}
+            </p>
+          )}
 
-        <div className="space-y-2 max-h-48 overflow-auto pr-1">
-          {parsedLines.map((line) => {
-            const lineDone = isDone || (progress?.durations?.[line.index] !== undefined);
-            const col = charColor(line.character, allNames);
-            return (
-              <div key={line.index} className="flex items-center gap-2.5 text-xs">
-                {lineDone
-                  ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                  : <Loader2 className="h-3.5 w-3.5 text-white/30 animate-spin shrink-0" />}
-                <span className={cn('w-16 truncate font-medium shrink-0', col.text)}>{line.character}</span>
-                <span className="text-white/30 truncate">"{line.text}"</span>
-              </div>
-            );
-          })}
+          {!isDone && !isError && (
+            <div className="flex items-center justify-center gap-2 text-white/40 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              This may take a moment per line…
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       <div className="flex justify-between">
         <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
           <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Cancel
         </Button>
-        <Button onClick={onNext} disabled={!isDone} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
-          Preview <ArrowRight className="ml-2 h-3.5 w-3.5" />
-        </Button>
       </div>
     </div>
   );
 }
 
-/* ─── Step 5: Preview ────────────────────────────────────────────── */
+/* ─── Step 5: Done ───────────────────────────────────────────────────── */
 
-function PreviewStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const { parsedLines, timeline, jobId, settings, setExportId } = useVideoStore();
-  const [visible, setVisible] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const audios = useRef<Record<number, HTMLAudioElement>>({});
-  const active = useRef(false);
-  const timer  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-  const allNames = [...new Set(parsedLines.map((l) => l.character))];
-  const sender = parsedLines[0]?.character || '';
-
-  useEffect(() => {
-    if (!jobId) return;
-    parsedLines.forEach((l) => {
-      audios.current[l.index] = new Audio(`/api/imessage/audio-file/${jobId}/${l.index}`);
-    });
-    return () => Object.values(audios.current).forEach((a) => a.pause());
-  }, [jobId]);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [visible]);
-
-  const play = (idx: number) => {
-    if (!active.current || idx >= timeline.length) { setPlaying(false); active.current = false; return; }
-    setVisible(idx + 1);
-    const entry = timeline[idx];
-    const audio = audios.current[entry.lineIndex];
-    if (audio) {
-      audio.currentTime = 0;
-      audio.onended = () => { if (active.current) timer.current = setTimeout(() => play(idx + 1), 400); };
-      audio.play().catch((e: Error) => {
-        if (e.name === 'AbortError') return;
-        if (active.current) timer.current = setTimeout(() => play(idx + 1), entry.duration);
-      });
-    } else {
-      timer.current = setTimeout(() => { if (active.current) play(idx + 1); }, entry.duration || 2000);
-    }
-  };
-
-  const toggle = () => {
-    if (playing) {
-      active.current = false;
-      if (timer.current) clearTimeout(timer.current);
-      Object.values(audios.current).forEach((a) => a.pause());
-      setPlaying(false);
-    } else {
-      setVisible(0);
-      active.current = true;
-      setPlaying(true);
-      timer.current = setTimeout(() => play(0), 200);
-    }
-  };
-
-  const doExport = async () => {
-    setExporting(true);
-    try {
-      const res = await fetch('/api/imessage/export', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, timeline, settings }),
-      });
-      const data = await res.json();
-      setExportId(data.exportId);
-      onNext();
-    } catch (_) { setExporting(false); }
-  };
-
-  const chatLines = parsedLines.slice(0, visible);
-
+function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-5">
+    <div className="p-8 max-w-lg mx-auto space-y-6 text-center">
+      <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto">
+        <CheckCircle2 className="h-8 w-8 text-green-400" />
+      </div>
       <div>
-        <h2 className="text-xl font-semibold text-white">Preview</h2>
-        <p className="text-sm text-white/40 mt-1">Watch the conversation play through, then export.</p>
+        <h2 className="text-xl font-semibold text-white">Audio ready!</h2>
+        <p className="text-sm text-white/40 mt-1">Your conversation MP3 has been generated.</p>
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-        {/* Phone mockup */}
-        <div className={cn(
-          'mx-auto rounded-3xl overflow-hidden border',
-          settings.darkMode ? 'border-white/10 bg-black' : 'border-gray-300 bg-[#f2f2f7]',
-          'w-56 h-[440px] flex flex-col'
-        )}>
-          {/* status bar */}
-          <div className={cn('px-4 py-3 border-b shrink-0', settings.darkMode ? 'border-white/8' : 'border-gray-200')}>
-            <p className={cn('text-center text-xs font-semibold', settings.darkMode ? 'text-white' : 'text-black')}>
-              {parsedLines.find((l) => l.character !== sender)?.character || 'Contact'}
-            </p>
-          </div>
-          {/* messages */}
-          <div className="flex-1 overflow-auto p-2.5 space-y-1.5">
-            {chatLines.map((line, i) => {
-              const isMe = line.character === sender;
-              return (
-                <div key={i} className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
-                  <div className={cn(
-                    'px-2.5 py-1 rounded-2xl text-[11px] max-w-[80%] leading-snug',
-                    isMe
-                      ? 'bg-[#34c759] text-white rounded-br-sm'
-                      : settings.darkMode
-                        ? 'bg-white/12 text-white rounded-bl-sm'
-                        : 'bg-white text-black rounded-bl-sm'
-                  )}>
-                    {line.text}
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={endRef} />
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-white/6 bg-white/3 p-4 space-y-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={toggle}
-                className={cn(
-                  'w-11 h-11 rounded-full flex items-center justify-center transition-colors shrink-0',
-                  playing ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                )}
-              >
-                {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
-              </button>
-              <div>
-                <p className="text-sm text-white font-medium">{playing ? 'Playing…' : visible === 0 ? 'Press play' : 'Paused'}</p>
-                <p className="text-xs text-white/30">{Math.min(visible, timeline.length)} / {timeline.length} messages</p>
-              </div>
-            </div>
-
-            <div className="h-px bg-white/5" />
-
-            {/* Script list */}
-            <div className="space-y-1.5 max-h-36 overflow-auto">
-              {parsedLines.map((line, i) => {
-                const col = charColor(line.character, allNames);
-                const shown = i < visible;
-                return (
-                  <div key={i} className={cn('flex items-center gap-2 text-xs transition-opacity', shown ? 'opacity-100' : 'opacity-20')}>
-                    <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', col.dot)} />
-                    <span className={cn('w-14 truncate font-medium shrink-0', col.text)}>{line.character}</span>
-                    <span className="text-white/40 truncate">{line.text.substring(0, 35)}{line.text.length > 35 ? '…' : ''}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <Button
-            className="w-full h-10 bg-green-600 hover:bg-green-700 text-sm"
-            onClick={doExport}
-            disabled={exporting}
-          >
-            {exporting ? 'Starting export…' : 'Export video'}
-            <Download className="ml-2 h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex justify-between pt-1">
-        <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
-          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+      <div className="flex flex-col gap-3">
+        <a
+          href={`/api/conversation/download/${jobId}`}
+          download
+          className="flex items-center justify-center gap-2 h-10 px-5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          <Download className="h-4 w-4" />
+          Download MP3
+        </a>
+        <Button
+          variant="ghost"
+          onClick={onReset}
+          className="text-white/40 hover:text-white h-9 text-sm"
+        >
+          Create another
         </Button>
       </div>
     </div>
   );
 }
 
-/* ─── Step 6: Export ─────────────────────────────────────────────── */
-
-function ExportStep({ onReset }: { onReset: () => void }) {
-  const { exportId } = useVideoStore();
-  const [prog, setProg] = useState<{ status: string; progress: number; errorMessage?: string } | null>(null);
-
-  useEffect(() => {
-    if (!exportId) return;
-    const iv = setInterval(async () => {
-      const res = await fetch(`/api/imessage/export-progress/${exportId}`);
-      const data = await res.json();
-      setProg(data);
-      if (data.status === 'done' || data.status === 'error') clearInterval(iv);
-    }, 800);
-    return () => clearInterval(iv);
-  }, [exportId]);
-
-  const isDone  = prog?.status === 'done';
-  const isError = prog?.status === 'error';
-  const pct     = prog?.progress || 0;
-
-  return (
-    <div className="p-8 max-w-md mx-auto space-y-6">
-      <div className="text-center space-y-1">
-        <h2 className="text-xl font-semibold text-white">Rendering video</h2>
-        <p className="text-sm text-white/40">Combining audio, frames & background…</p>
-      </div>
-
-      <div className="rounded-xl border border-white/6 bg-white/3 p-6 space-y-5">
-        <div className="space-y-2">
-          <div className="flex justify-between items-center text-sm">
-            <div className="flex items-center gap-2 text-white/60">
-              {isDone   ? <CheckCircle2 className="h-4 w-4 text-green-400" /> :
-               isError  ? <AlertCircle  className="h-4 w-4 text-red-400"   /> :
-                          <Loader2      className="h-4 w-4 animate-spin text-white/30" />}
-              {isDone ? 'Done!' : isError ? 'Failed' : 'Rendering…'}
-            </div>
-            <span className="text-green-400 font-semibold text-lg">{Math.round(pct)}%</span>
-          </div>
-          <Progress value={pct} className="h-2" />
-        </div>
-
-        {isError && (
-          <p className="text-sm text-red-400 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-            {prog?.errorMessage || 'Something went wrong during rendering.'}
-          </p>
-        )}
-
-        <div className="space-y-2">
-          <Button
-            className="w-full h-10 bg-green-600 hover:bg-green-700 text-sm"
-            onClick={() => window.open(`/api/imessage/download/${exportId}`, '_blank')}
-            disabled={!isDone}
-          >
-            Download MP4 <Download className="ml-2 h-3.5 w-3.5" />
-          </Button>
-          {isDone && (
-            <Button
-              variant="ghost"
-              className="w-full h-9 text-white/40 hover:text-white text-sm"
-              onClick={onReset}
-            >
-              Create another
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Root ───────────────────────────────────────────────────────── */
+/* ─── Root ───────────────────────────────────────────────────────────── */
 
 export function TextAutomation() {
-  const [step, setStep] = useState<Step>('cast');
-  const { reset } = useVideoStore();
+  const [step, setStep] = useState<Step>('setup');
+  const [characters, setCharacters] = useState<Character[]>([
+    { id: uid(), name: 'You', voice: 'af_heart', isMe: true },
+    { id: uid(), name: '',    voice: 'am_adam',  isMe: false },
+  ]);
+  const [scriptText, setScriptText]   = useState('');
+  const [parsedLines, setParsedLines] = useState<ParsedLine[]>([]);
+  const [audioJobId, setAudioJobId]   = useState<string | null>(null);
 
-  const handleReset = () => { reset(); setStep('cast'); };
+  const handleReset = () => {
+    setStep('setup');
+    setCharacters([
+      { id: uid(), name: 'You', voice: 'af_heart', isMe: true },
+      { id: uid(), name: '',    voice: 'am_adam',  isMe: false },
+    ]);
+    setScriptText('');
+    setParsedLines([]);
+    setAudioJobId(null);
+  };
 
   return (
     <div className="min-h-screen bg-[#080808] flex flex-col">
       <StepBar current={step} />
       <div className="flex-1">
-        {step === 'cast'     && <CastStep     onNext={() => setStep('script')}   />}
-        {step === 'script'   && <ScriptStep   onNext={() => setStep('voices')}   onBack={() => setStep('cast')}     />}
-        {step === 'voices'   && <VoicesStep   onNext={() => setStep('generate')} onBack={() => setStep('script')}   />}
-        {step === 'generate' && <GenerateStep onNext={() => setStep('preview')}  onBack={() => setStep('voices')}   />}
-        {step === 'preview'  && <PreviewStep  onNext={() => setStep('export')}   onBack={() => setStep('generate')} />}
-        {step === 'export'   && <ExportStep   onReset={handleReset}              />}
+        {step === 'setup' && (
+          <SetupStep
+            characters={characters}
+            onChange={setCharacters}
+            onNext={() => setStep('script')}
+          />
+        )}
+        {step === 'script' && (
+          <ScriptStep
+            characters={characters}
+            initialScript={scriptText}
+            onParsed={(lines, script) => {
+              setParsedLines(lines);
+              setScriptText(script);
+              setStep('preview');
+            }}
+            onBack={() => setStep('setup')}
+          />
+        )}
+        {step === 'preview' && (
+          <PreviewStep
+            characters={characters}
+            lines={parsedLines}
+            onLinesChange={setParsedLines}
+            onGenerate={() => setStep('audio')}
+            onBack={() => setStep('script')}
+          />
+        )}
+        {step === 'audio' && (
+          <AudioStep
+            lines={parsedLines}
+            characters={characters}
+            onDone={(jid) => { setAudioJobId(jid); setStep('done'); }}
+            onBack={() => setStep('preview')}
+          />
+        )}
+        {step === 'done' && audioJobId && (
+          <DoneStep jobId={audioJobId} onReset={handleReset} />
+        )}
       </div>
     </div>
   );

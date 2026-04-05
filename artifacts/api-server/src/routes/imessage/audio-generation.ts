@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
-import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger";
+import { generateAudio } from "../../utils/kokoroTTS";
+import { spawn } from "child_process";
 
 const router = Router();
 
@@ -58,18 +58,7 @@ async function generateLine(job: AudioJob, line: ScriptLine): Promise<void> {
   );
 
   try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(line.voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(line.text);
-
-    const writeStream = fs.createWriteStream(outputFile);
-    audioStream.pipe(writeStream);
-
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on("finish", resolve);
-      writeStream.on("error", reject);
-      audioStream.on("error", reject);
-    });
+    await generateAudio(line.text, line.voice, outputFile);
 
     if (!fs.existsSync(outputFile)) {
       throw new Error("Output file not created");
@@ -90,10 +79,8 @@ async function generateLine(job: AudioJob, line: ScriptLine): Promise<void> {
 
 async function processJob(job: AudioJob): Promise<void> {
   job.status = "running";
-  const batchSize = 5;
-  for (let i = 0; i < job.lines.length; i += batchSize) {
-    const batch = job.lines.slice(i, i + batchSize);
-    await Promise.all(batch.map((line) => generateLine(job, line)));
+  for (const line of job.lines) {
+    await generateLine(job, line);
   }
   job.status = "done";
 }

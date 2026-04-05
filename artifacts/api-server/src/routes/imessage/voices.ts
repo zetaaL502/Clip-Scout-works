@@ -1,34 +1,17 @@
 import { Router } from "express";
-import { MsEdgeTTS } from "msedge-tts";
-import { logger } from "../../lib/logger";
+import { KOKORO_VOICES } from "../../utils/kokoroTTS";
 
 const router = Router();
 
-let cachedVoices: object[] | null = null;
-
-router.get("/imessage/voices", async (_req, res): Promise<void> => {
-  if (cachedVoices) {
-    res.json({ voices: cachedVoices });
-    return;
-  }
-
-  try {
-    const tts = new MsEdgeTTS();
-    const allVoices = await tts.getVoices();
-    const englishVoices = allVoices
-      .filter((v) => v.Locale.startsWith("en-"))
-      .map((v) => ({
-        name: v.Name,
-        shortName: v.ShortName,
-        gender: v.Gender,
-        locale: v.Locale,
-      }));
-    cachedVoices = englishVoices;
-    res.json({ voices: englishVoices });
-  } catch (e) {
-    logger.error({ e }, "Failed to retrieve voices");
-    res.status(500).json({ error: "Failed to retrieve voices" });
-  }
+router.get("/imessage/voices", (_req, res): void => {
+  res.json({
+    voices: KOKORO_VOICES.map((v) => ({
+      shortName: v.id,
+      name: `${v.label} (${v.accent})`,
+      gender: v.gender,
+      locale: v.accent === "American" ? "en-US" : "en-GB",
+    })),
+  });
 });
 
 export default router;

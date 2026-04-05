@@ -14,6 +14,10 @@ import {
   uploadRouter,
   imessageExportRouter,
 } from "./imessage";
+import {
+  conversationGenerateRouter,
+  conversationUploadRouter,
+} from "./conversation";
 
 const router: IRouter = Router();
 
@@ -30,5 +34,7 @@ router.use(previewVoiceRouter);
 router.use(audioGenerationRouter);
 router.use(uploadRouter);
 router.use(imessageExportRouter);
+router.use(conversationGenerateRouter);
+router.use(conversationUploadRouter);
 
 export default router;
