@@ -1,392 +1,549 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, KeyboardEvent } from 'react';
 import { useVideoStore, type Gender, type ScriptLine, type TimelineEntry } from '@/store/use-video-store';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  AlertCircle, ArrowRight, ArrowLeft, User, CheckCircle2, Loader2,
-  Play, Pause, Download, Upload, Music, Video, Home
+  ArrowRight, ArrowLeft, CheckCircle2, Loader2, Play, Pause,
+  Download, Music, Video, Plus, Trash2, User, AlertCircle,
 } from 'lucide-react';
 
-type Step = 'script' | 'characters' | 'generate' | 'preview' | 'export';
+type Step = 'cast' | 'script' | 'voices' | 'generate' | 'preview' | 'export';
 
-const STEPS: { id: Step; title: string; description: string }[] = [
-  { id: 'script', title: 'Script Input', description: 'Write your conversation' },
-  { id: 'characters', title: 'Characters', description: 'Assign voices & avatars' },
-  { id: 'generate', title: 'Generate Audio', description: 'Create voice lines' },
-  { id: 'preview', title: 'Preview', description: 'Watch the conversation' },
-  { id: 'export', title: 'Export', description: 'Render final video' },
+const STEPS: { id: Step; label: string }[] = [
+  { id: 'cast',     label: 'Cast'     },
+  { id: 'script',   label: 'Script'   },
+  { id: 'voices',   label: 'Voices'   },
+  { id: 'generate', label: 'Generate' },
+  { id: 'preview',  label: 'Preview'  },
+  { id: 'export',   label: 'Export'   },
 ];
 
-function cn(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(' ');
+function cn(...c: (string | boolean | undefined | null)[]): string {
+  return c.filter(Boolean).join(' ');
 }
 
-function parseScript(raw: string): { genderMap: Record<string, Gender>; lines: ScriptLine[]; error: string | null } {
-  try {
-    if (!raw.trim()) return { genderMap: {}, lines: [], error: null };
-    const textLines = raw.split('\n').filter((l) => l.trim().length > 0);
-    if (textLines.length === 0) throw new Error('Script is empty');
-    const firstLine = textLines[0];
-    if (!firstLine.includes('=')) throw new Error("First line must be a gender map, e.g., 'Sarah=F, Michael=M'");
-    const genderMap: Record<string, Gender> = {};
-    for (const part of firstLine.split(',')) {
-      const [name, gender] = part.split('=').map((s) => s.trim());
-      if (!name || (gender !== 'M' && gender !== 'F')) throw new Error("Invalid gender map. Use 'Name=M' or 'Name=F'.");
-      genderMap[name] = gender as Gender;
-    }
-    const lines: ScriptLine[] = [];
-    for (let i = 1; i < textLines.length; i++) {
-      const line = textLines[i];
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) throw new Error(`Line ${i + 1} is missing a colon (:). Format: "Name: message"`);
-      const character = line.substring(0, colonIdx).trim();
-      const text = line.substring(colonIdx + 1).trim();
-      if (!genderMap[character]) throw new Error(`Character "${character}" not in gender map.`);
-      lines.push({ index: i - 1, character, text, isImage: text.startsWith('[img:') && text.endsWith(']') });
-    }
-    return { genderMap, lines, error: null };
-  } catch (e: unknown) {
-    return { genderMap: {}, lines: [], error: (e as Error).message };
-  }
+const CHAR_COLORS = [
+  { bg: 'bg-violet-500/20', text: 'text-violet-300', dot: 'bg-violet-400' },
+  { bg: 'bg-sky-500/20',    text: 'text-sky-300',    dot: 'bg-sky-400'    },
+  { bg: 'bg-amber-500/20',  text: 'text-amber-300',  dot: 'bg-amber-400'  },
+  { bg: 'bg-rose-500/20',   text: 'text-rose-300',   dot: 'bg-rose-400'   },
+  { bg: 'bg-teal-500/20',   text: 'text-teal-300',   dot: 'bg-teal-400'   },
+  { bg: 'bg-pink-500/20',   text: 'text-pink-300',   dot: 'bg-pink-400'   },
+];
+
+function charColor(name: string, allNames: string[]) {
+  const idx = allNames.indexOf(name);
+  return CHAR_COLORS[idx % CHAR_COLORS.length];
 }
 
-function ScriptStep({ onNext }: { onNext: () => void }) {
-  const { scriptText, setScriptText, setGenderMap, setParsedLines, characters, updateCharacter } = useVideoStore();
-  const [localScript, setLocalScript] = useState(
-    scriptText || 'Sarah=F, Michael=M\nSarah: Hey! Are we still on for tonight?\nMichael: Yeah definitely. 7pm at the usual spot?'
+/* ─── Step Indicator ─────────────────────────────────────────────── */
+
+function StepBar({ current }: { current: Step }) {
+  const idx = STEPS.findIndex((s) => s.id === current);
+  return (
+    <div className="flex items-center gap-0 px-6 py-4 border-b border-white/5">
+      {STEPS.map((s, i) => {
+        const past    = i < idx;
+        const active  = i === idx;
+        const future  = i > idx;
+        return (
+          <div key={s.id} className="flex items-center flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className={cn(
+                'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
+                active  ? 'bg-green-500 text-white'              : '',
+                past    ? 'bg-green-500/20 text-green-400'       : '',
+                future  ? 'bg-white/5 text-white/20'             : '',
+              )}>
+                {past ? <CheckCircle2 className="h-3 w-3" /> : i + 1}
+              </div>
+              <span className={cn(
+                'text-xs font-medium hidden sm:block',
+                active ? 'text-white'    : '',
+                past   ? 'text-green-400': '',
+                future ? 'text-white/25' : '',
+              )}>{s.label}</span>
+            </div>
+            {i < STEPS.length - 1 && (
+              <div className={cn('h-px flex-1 mx-2', past ? 'bg-green-500/40' : 'bg-white/5')} />
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
-  const { genderMap, lines, error } = parseScript(localScript);
+}
+
+/* ─── Step 1: Cast ───────────────────────────────────────────────── */
+
+interface CastMember { name: string; gender: Gender }
+
+function CastStep({ onNext }: { onNext: () => void }) {
+  const { genderMap, setGenderMap, updateCharacter } = useVideoStore();
+
+  const [cast, setCast] = useState<CastMember[]>(() =>
+    Object.keys(genderMap).length > 0
+      ? Object.entries(genderMap).map(([name, gender]) => ({ name, gender }))
+      : [{ name: '', gender: 'F' }]
+  );
+  const [nameErr, setNameErr] = useState('');
+
+  const names = cast.map((c) => c.name.trim()).filter(Boolean);
+
+  const addMember = () => setCast((prev) => [...prev, { name: '', gender: 'F' }]);
+
+  const removeMember = (i: number) => {
+    if (cast.length === 1) return;
+    setCast((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const updateMember = (i: number, patch: Partial<CastMember>) =>
+    setCast((prev) => prev.map((m, idx) => idx === i ? { ...m, ...patch } : m));
 
   const handleNext = () => {
-    if (error || lines.length === 0) return;
-    setScriptText(localScript);
-    setGenderMap(genderMap);
-    setParsedLines(lines);
-    Object.entries(genderMap).forEach(([name, gender]) => {
-      if (!characters[name]) {
-        updateCharacter(name, { gender, voice: gender === 'F' ? 'en-US-AriaNeural' : 'en-US-GuyNeural' });
-      }
+    const trimmed = cast.map((c) => ({ ...c, name: c.name.trim() }));
+    const validNames = trimmed.map((c) => c.name).filter(Boolean);
+
+    if (validNames.length < 2) { setNameErr('Add at least 2 characters.'); return; }
+    const dup = validNames.find((n, i) => validNames.indexOf(n) !== i);
+    if (dup) { setNameErr(`"${dup}" appears twice.`); return; }
+
+    const map: Record<string, Gender> = {};
+    trimmed.filter((c) => c.name).forEach((c) => {
+      map[c.name] = c.gender;
+      updateCharacter(c.name, { gender: c.gender, voice: c.gender === 'F' ? 'en-US-AriaNeural' : 'en-US-GuyNeural' });
     });
+    setGenderMap(map);
     onNext();
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-8 max-w-xl mx-auto space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-white">Script Input</h2>
-        <p className="text-gray-400 text-sm mt-1">Write a conversation script. First line defines character genders.</p>
+        <h2 className="text-xl font-semibold text-white">Define your cast</h2>
+        <p className="text-sm text-white/40 mt-1">Add everyone who appears in the conversation.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <Label className="text-gray-300">Script</Label>
-          <Textarea
-            value={localScript}
-            onChange={(e) => setLocalScript(e.target.value)}
-            className="min-h-64 bg-gray-900 border-gray-700 text-white font-mono text-sm resize-none"
-            placeholder={'Sarah=F, Michael=M\nSarah: Hey!\nMichael: Hi there!'}
-          />
-          {error && (
-            <div className="flex items-start gap-2 text-red-400 text-sm bg-red-950/30 border border-red-800/50 rounded-lg p-3">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-          <div className="text-xs text-gray-500">
-            <p>Format: First line = <code className="text-green-400">Name=F, Name=M</code></p>
-            <p>Messages = <code className="text-green-400">Name: message text</code></p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <Card className="bg-gray-900 border-gray-700">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-gray-300">Detected Characters</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {Object.keys(genderMap).length === 0 ? (
-                <p className="text-gray-500 text-sm text-center py-4">No characters detected yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(genderMap).map(([name, gender]) => (
-                    <div key={name} className="flex items-center justify-between p-2 rounded-lg bg-gray-800/50">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-green-500/20 flex items-center justify-center text-green-400">
-                          <User className="h-3.5 w-3.5" />
-                        </div>
-                        <span className="text-sm font-medium text-white">{name}</span>
-                      </div>
-                      <Badge variant="outline" className={gender === 'F' ? 'border-pink-500/30 text-pink-400' : 'border-blue-500/30 text-blue-400'}>
-                        {gender === 'F' ? 'Female' : 'Male'}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gray-900 border-gray-700">
-            <CardContent className="pt-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col items-center justify-center p-3 rounded-lg bg-gray-800/50">
-                  <span className="text-2xl font-bold text-green-400">{lines.length}</span>
-                  <span className="text-xs text-gray-500 uppercase tracking-wider mt-1">Lines</span>
-                </div>
-                <div className="flex flex-col items-center justify-center p-3 rounded-lg bg-gray-800/50">
-                  <span className="text-2xl font-bold text-green-400">{Object.keys(genderMap).length}</span>
-                  <span className="text-xs text-gray-500 uppercase tracking-wider mt-1">Cast</span>
-                </div>
+      <div className="space-y-3">
+        {cast.map((member, i) => {
+          const col = charColor(member.name || '?', names);
+          return (
+            <div key={i} className="flex items-center gap-3">
+              {/* Avatar letter */}
+              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0', col.bg, col.text)}>
+                {member.name?.[0]?.toUpperCase() || <User className="h-4 w-4 opacity-30" />}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+
+              {/* Name */}
+              <Input
+                value={member.name}
+                onChange={(e) => { updateMember(i, { name: e.target.value }); setNameErr(''); }}
+                placeholder="Name (e.g. Maria)"
+                className="flex-1 bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-sm focus:border-green-500/50"
+                onKeyDown={(e: KeyboardEvent) => e.key === 'Enter' && addMember()}
+              />
+
+              {/* Gender toggle */}
+              <div className="flex rounded-lg overflow-hidden border border-white/10 shrink-0">
+                {(['F', 'M'] as Gender[]).map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => updateMember(i, { gender: g })}
+                    className={cn(
+                      'px-3 py-1.5 text-xs font-medium transition-colors',
+                      member.gender === g
+                        ? g === 'F' ? 'bg-pink-500/20 text-pink-300' : 'bg-blue-500/20 text-blue-300'
+                        : 'text-white/30 hover:text-white/50'
+                    )}
+                  >
+                    {g === 'F' ? '♀ Female' : '♂ Male'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Remove */}
+              <button
+                onClick={() => removeMember(i)}
+                className={cn('text-white/20 hover:text-red-400 transition-colors', cast.length === 1 && 'invisible')}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleNext} disabled={!!error || lines.length === 0} className="bg-green-600 hover:bg-green-700">
-          Continue <ArrowRight className="ml-2 h-4 w-4" />
+      <button
+        onClick={addMember}
+        className="flex items-center gap-2 text-sm text-white/40 hover:text-green-400 transition-colors"
+      >
+        <Plus className="h-4 w-4" /> Add character
+      </button>
+
+      {nameErr && (
+        <p className="flex items-center gap-2 text-red-400 text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" /> {nameErr}
+        </p>
+      )}
+
+      <div className="flex justify-end pt-2">
+        <Button onClick={handleNext} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
+          Next <ArrowRight className="ml-2 h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
   );
 }
 
-function CharactersStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const {
-    characters, genderMap, updateCharacter, settings, setSettings,
-    setBackgroundMusicId, setBackgroundVideoId, backgroundVideoId, backgroundMusicId,
-  } = useVideoStore();
-  const [voices, setVoices] = useState<Array<{ shortName: string; name: string; gender: string; locale: string }>>([]);
-  const [loadingVoices, setLoadingVoices] = useState(false);
-  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+/* ─── Step 2: Script ─────────────────────────────────────────────── */
+
+function parseScriptLines(
+  raw: string,
+  genderMap: Record<string, Gender>
+): { lines: ScriptLine[]; error: string | null } {
+  try {
+    const textLines = raw.split('\n').filter((l) => l.trim());
+    const lines: ScriptLine[] = [];
+    for (let i = 0; i < textLines.length; i++) {
+      const line = textLines[i];
+      const colon = line.indexOf(':');
+      if (colon === -1) throw new Error(`Line ${i + 1}: missing colon — use "Name: message"`);
+      const character = line.substring(0, colon).trim();
+      const text = line.substring(colon + 1).trim();
+      if (!genderMap[character]) throw new Error(`"${character}" isn't in your cast.`);
+      if (!text) throw new Error(`Line ${i + 1}: empty message for ${character}.`);
+      lines.push({ index: i, character, text });
+    }
+    return { lines, error: null };
+  } catch (e: unknown) {
+    return { lines: [], error: (e as Error).message };
+  }
+}
+
+function ScriptStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const { scriptText, genderMap, setScriptText, setParsedLines } = useVideoStore();
+  const names = Object.keys(genderMap);
+
+  const [local, setLocal] = useState(
+    scriptText ||
+    names.slice(0, 2).map((n, i) => (i === 0
+      ? `${n}: Hey! Are we still on for tonight?`
+      : `${n}: Yeah definitely, 7pm works.`
+    )).join('\n')
+  );
+
+  const { lines, error } = parseScriptLines(local, genderMap);
+
+  const handleNext = () => {
+    if (error || lines.length === 0) return;
+    setScriptText(local);
+    setParsedLines(lines);
+    onNext();
+  };
+
+  const insertName = (name: string) => {
+    setLocal((prev) => {
+      const parts = prev.split('\n');
+      const last = parts[parts.length - 1] || '';
+      if (!last.trim()) {
+        parts[parts.length - 1] = `${name}: `;
+      } else {
+        parts.push(`${name}: `);
+      }
+      return parts.join('\n');
+    });
+  };
+
+  const allNames = Object.keys(genderMap);
+
+  return (
+    <div className="p-8 max-w-3xl mx-auto space-y-5">
+      <div>
+        <h2 className="text-xl font-semibold text-white">Write the script</h2>
+        <p className="text-sm text-white/40 mt-1">Each line: <code className="text-green-400 text-xs">Name: message</code></p>
+      </div>
+
+      {/* Cast pill shortcuts */}
+      <div className="flex flex-wrap gap-2">
+        {names.map((name) => {
+          const col = charColor(name, allNames);
+          return (
+            <button
+              key={name}
+              onClick={() => insertName(name)}
+              className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-opacity hover:opacity-80', col.bg, col.text)}
+            >
+              <span className={cn('w-1.5 h-1.5 rounded-full', col.dot)} />
+              {name}
+            </button>
+          );
+        })}
+        <span className="text-xs text-white/25 self-center">← click to insert</span>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Textarea */}
+        <div className="lg:col-span-3 space-y-2">
+          <Textarea
+            value={local}
+            onChange={(e) => setLocal(e.target.value)}
+            className="min-h-72 bg-white/3 border-white/8 text-white font-mono text-sm resize-none leading-relaxed focus:border-green-500/40"
+            placeholder={names.slice(0,2).map((n,i)=>`${n}: ${i===0?'Hey!':'Hi there!'}`).join('\n')}
+            spellCheck={false}
+          />
+          {error && (
+            <p className="flex items-center gap-2 text-red-400 text-sm">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {error}
+            </p>
+          )}
+        </div>
+
+        {/* Live preview */}
+        <div className="lg:col-span-2">
+          <div className="rounded-xl border border-white/8 bg-white/3 overflow-hidden h-72 flex flex-col">
+            <div className="px-3 py-2 border-b border-white/5">
+              <p className="text-xs text-white/30 font-medium uppercase tracking-wider">Preview</p>
+            </div>
+            <div className="flex-1 overflow-auto p-3 space-y-2">
+              {lines.length === 0
+                ? <p className="text-xs text-white/20 text-center mt-8">Start typing…</p>
+                : lines.map((line, i) => {
+                    const isFirst = line.character === lines[0].character;
+                    const col = charColor(line.character, allNames);
+                    return (
+                      <div key={i} className={cn('flex', isFirst ? 'justify-end' : 'justify-start')}>
+                        <div className={cn(
+                          'rounded-2xl px-2.5 py-1.5 text-xs max-w-[78%]',
+                          isFirst
+                            ? 'bg-green-600/80 text-white rounded-br-sm'
+                            : cn('bg-white/8 text-white/80 rounded-bl-sm')
+                        )}>
+                          {line.text}
+                        </div>
+                      </div>
+                    );
+                  })
+              }
+            </div>
+          </div>
+          <p className="text-xs text-white/25 text-right mt-1">{lines.length} lines</p>
+        </div>
+      </div>
+
+      <div className="flex justify-between pt-1">
+        <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+        </Button>
+        <Button onClick={handleNext} disabled={!!error || lines.length === 0} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
+          Next <ArrowRight className="ml-2 h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Step 3: Voices ─────────────────────────────────────────────── */
+
+function VoicesStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const { genderMap, characters, updateCharacter, settings, setSettings,
+          backgroundVideoId, backgroundMusicId, setBackgroundVideoId, setBackgroundMusicId } = useVideoStore();
+  const [voices, setVoices] = useState<Array<{ shortName: string; gender: string; locale: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [playing, setPlaying] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const allNames = Object.keys(genderMap);
 
   useEffect(() => {
-    setLoadingVoices(true);
+    setLoading(true);
     fetch('/api/imessage/voices')
       .then((r) => r.json())
       .then((d) => setVoices(d.voices || []))
       .catch(() => {})
-      .finally(() => setLoadingVoices(false));
+      .finally(() => setLoading(false));
   }, []);
 
-  const handlePlayPreview = async (voice: string) => {
-    if (playingVoice === voice && audioRef.current) {
-      audioRef.current.pause();
-      setPlayingVoice(null);
-      return;
-    }
+  const preview = async (voice: string) => {
+    if (playing === voice) { audioRef.current?.pause(); setPlaying(null); return; }
     try {
       const res = await fetch('/api/imessage/preview-voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voice, text: 'Hello, this is a voice preview.' }),
+        body: JSON.stringify({ voice, text: 'Hey, this is how I sound.' }),
       });
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      if (audioRef.current) audioRef.current.pause();
-      const audio = new Audio(url);
+      audioRef.current?.pause();
+      const audio = new Audio(URL.createObjectURL(blob));
       audioRef.current = audio;
-      setPlayingVoice(voice);
+      setPlaying(voice);
       audio.play();
-      audio.onended = () => setPlayingVoice(null);
+      audio.onended = () => setPlaying(null);
     } catch (_) {}
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>, charName: string) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadFile = async (file: File, type: string) => {
     const form = new FormData();
     form.append('file', file);
-    form.append('type', 'avatar');
-    form.append('characterName', charName);
+    form.append('type', type);
     const res = await fetch('/api/imessage/upload', { method: 'POST', body: form });
-    const data = await res.json();
-    if (data.fileId) updateCharacter(charName, { avatarFileId: data.fileId, avatarUrl: data.url });
+    return res.json();
   };
-
-  const handleBgVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const form = new FormData();
-    form.append('file', file);
-    form.append('type', 'background_video');
-    const res = await fetch('/api/imessage/upload', { method: 'POST', body: form });
-    const data = await res.json();
-    if (data.fileId) setBackgroundVideoId(data.fileId);
-  };
-
-  const handleBgMusicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const form = new FormData();
-    form.append('file', file);
-    form.append('type', 'background_music');
-    const res = await fetch('/api/imessage/upload', { method: 'POST', body: form });
-    const data = await res.json();
-    if (data.fileId) setBackgroundMusicId(data.fileId);
-  };
-
-  const charNames = Object.keys(genderMap);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="p-8 max-w-2xl mx-auto space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-white">Characters & Settings</h2>
-        <p className="text-gray-400 text-sm mt-1">Assign voices and customize the video appearance.</p>
+        <h2 className="text-xl font-semibold text-white">Voices & settings</h2>
+        <p className="text-sm text-white/40 mt-1">Pick a voice for each character, then set the video style.</p>
       </div>
 
-      {charNames.map((name) => {
-        const char = characters[name] || {};
-        const charVoices = voices.filter((v) => v.gender === (genderMap[name] === 'F' ? 'Female' : 'Male'));
-        return (
-          <Card key={name} className="bg-gray-900 border-gray-700">
-            <CardContent className="pt-5 space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <Avatar className="h-14 w-14">
-                    <AvatarImage src={char.avatarUrl ? `/api${char.avatarUrl.replace('/api', '')}` : undefined} />
-                    <AvatarFallback className="bg-gray-700 text-white text-lg">{name[0]}</AvatarFallback>
-                  </Avatar>
-                  <label className="absolute -bottom-1 -right-1 bg-gray-700 rounded-full p-0.5 cursor-pointer hover:bg-gray-600">
-                    <Upload className="h-3 w-3 text-gray-300" />
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e, name)} />
-                  </label>
-                </div>
-                <div>
-                  <p className="font-medium text-white">{name}</p>
-                  <Badge variant="outline" className={genderMap[name] === 'F' ? 'border-pink-500/30 text-pink-400' : 'border-blue-500/30 text-blue-400'}>
-                    {genderMap[name] === 'F' ? 'Female' : 'Male'}
-                  </Badge>
-                </div>
+      {/* Characters */}
+      <div className="space-y-3">
+        {allNames.map((name) => {
+          const char = characters[name] || {};
+          const col = charColor(name, allNames);
+          const charVoices = voices.filter((v) => v.gender === (genderMap[name] === 'F' ? 'Female' : 'Male'));
+          return (
+            <div key={name} className="flex items-center gap-3 p-3 rounded-xl bg-white/4 border border-white/6">
+              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0', col.bg, col.text)}>
+                {name[0].toUpperCase()}
               </div>
-
-              <div className="space-y-2">
-                <Label className="text-gray-300 text-sm">Voice</Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={char.voice || ''}
-                    onValueChange={(v) => updateCharacter(name, { voice: v })}
-                    disabled={loadingVoices}
-                  >
-                    <SelectTrigger className="bg-gray-800 border-gray-600 text-white flex-1">
-                      <SelectValue placeholder={loadingVoices ? 'Loading voices...' : 'Select a voice'} />
-                    </SelectTrigger>
-                    <SelectContent className="bg-gray-800 border-gray-600 max-h-48">
-                      {charVoices.map((v) => (
-                        <SelectItem key={v.shortName} value={v.shortName} className="text-gray-200">
-                          {v.shortName.split('-').slice(2).join('-')} ({v.locale})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-600 text-gray-300"
-                    onClick={() => handlePlayPreview(char.voice || '')}
-                    disabled={!char.voice}
-                  >
-                    {playingVoice === char.voice ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-
-      <Card className="bg-gray-900 border-gray-700">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm text-gray-300">Video Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label className="text-gray-300">Dark Mode</Label>
-            <Switch checked={settings.darkMode} onCheckedChange={(v) => setSettings({ darkMode: v })} />
-          </div>
-          <div className="flex items-center justify-between">
-            <Label className="text-gray-300">Show Phone Frame</Label>
-            <Switch checked={settings.showFrame} onCheckedChange={(v) => setSettings({ showFrame: v })} />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-gray-300">Format</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['9:16', '16:9'] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setSettings({ format: f })}
-                  className={cn(
-                    'p-2 rounded-lg border text-sm font-medium transition-colors',
-                    settings.format === f
-                      ? 'border-green-500 bg-green-500/10 text-green-400'
-                      : 'border-gray-700 text-gray-400 hover:border-gray-500'
-                  )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white mb-1">{name}</p>
+                <Select
+                  value={char.voice || ''}
+                  onValueChange={(v) => updateCharacter(name, { voice: v })}
+                  disabled={loading}
                 >
-                  {f === '9:16' ? '9:16 Vertical (TikTok/Reels)' : '16:9 Landscape (YouTube)'}
-                </button>
-              ))}
+                  <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10 text-white">
+                    <SelectValue placeholder={loading ? 'Loading…' : 'Select voice'} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1a1a] border-white/10 max-h-44">
+                    {charVoices.map((v) => (
+                      <SelectItem key={v.shortName} value={v.shortName} className="text-xs text-white/80">
+                        {v.shortName.split('-').slice(2).join('-')}
+                        <span className="text-white/30 ml-1">({v.locale})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <button
+                onClick={() => preview(char.voice || '')}
+                disabled={!char.voice}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-green-500/20 flex items-center justify-center text-white/50 hover:text-green-400 transition-colors disabled:opacity-30"
+              >
+                {playing === char.voice ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 ml-0.5" />}
+              </button>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          );
+        })}
+      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="border border-dashed border-gray-700 rounded-xl p-4 flex flex-col items-center gap-2 bg-gray-900/50 relative hover:bg-gray-800/50 transition-colors">
-          <Video className="h-6 w-6 text-gray-500" />
-          <p className="text-xs font-medium text-gray-300">Background Video</p>
-          <p className="text-xs text-gray-600">Gameplay/Nature (MP4)</p>
-          {backgroundVideoId && <Badge className="bg-green-500/10 text-green-400 border-green-500/30">Uploaded</Badge>}
-          <input type="file" accept="video/mp4" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleBgVideoUpload} />
+      {/* Video settings */}
+      <div className="rounded-xl border border-white/6 bg-white/3 p-4 space-y-4">
+        <p className="text-xs font-semibold text-white/40 uppercase tracking-wider">Video style</p>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white/70">Dark chat theme</span>
+          <Switch checked={settings.darkMode} onCheckedChange={(v) => setSettings({ darkMode: v })} />
         </div>
-        <div className="border border-dashed border-gray-700 rounded-xl p-4 flex flex-col items-center gap-2 bg-gray-900/50 relative hover:bg-gray-800/50 transition-colors">
-          <Music className="h-6 w-6 text-gray-500" />
-          <p className="text-xs font-medium text-gray-300">Background Music</p>
-          <p className="text-xs text-gray-600">Lo-fi/Trending (MP3)</p>
-          {backgroundMusicId && <Badge className="bg-green-500/10 text-green-400 border-green-500/30">Uploaded</Badge>}
-          <input type="file" accept="audio/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={handleBgMusicUpload} />
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-white/70">Show phone frame</span>
+          <Switch checked={settings.showFrame} onCheckedChange={(v) => setSettings({ showFrame: v })} />
+        </div>
+
+        <div className="space-y-2">
+          <span className="text-sm text-white/70">Format</span>
+          <div className="grid grid-cols-2 gap-2 mt-1.5">
+            {(['9:16', '16:9'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setSettings({ format: f })}
+                className={cn(
+                  'py-2 rounded-lg border text-xs font-medium transition-all',
+                  settings.format === f
+                    ? 'border-green-500/50 bg-green-500/10 text-green-400'
+                    : 'border-white/8 text-white/30 hover:border-white/20 hover:text-white/50'
+                )}
+              >
+                {f === '9:16' ? '9∶16 — Vertical' : '16∶9 — Landscape'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="flex justify-between">
-        <Button variant="ghost" onClick={onBack} className="text-gray-400">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+      {/* Media uploads */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { icon: Video, label: 'Background video', sub: 'MP4 gameplay / nature', type: 'background_video', accept: 'video/mp4', uploaded: !!backgroundVideoId, onUpload: (fid: string) => setBackgroundVideoId(fid) },
+          { icon: Music, label: 'Background music', sub: 'MP3 lo-fi / trending', type: 'background_music', accept: 'audio/*', uploaded: !!backgroundMusicId, onUpload: (fid: string) => setBackgroundMusicId(fid) },
+        ].map(({ icon: Icon, label, sub, type, accept, uploaded, onUpload }) => (
+          <label key={label} className={cn(
+            'relative flex flex-col items-center gap-2 p-4 rounded-xl border border-dashed cursor-pointer transition-colors',
+            uploaded ? 'border-green-500/40 bg-green-500/5' : 'border-white/10 bg-white/3 hover:border-white/20'
+          )}>
+            <Icon className={cn('h-5 w-5', uploaded ? 'text-green-400' : 'text-white/30')} />
+            <div className="text-center">
+              <p className={cn('text-xs font-medium', uploaded ? 'text-green-400' : 'text-white/50')}>{uploaded ? 'Uploaded ✓' : label}</p>
+              {!uploaded && <p className="text-[10px] text-white/25 mt-0.5">{sub}</p>}
+            </div>
+            <input
+              type="file"
+              accept={accept}
+              className="absolute inset-0 opacity-0 cursor-pointer"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const data = await uploadFile(file, type);
+                if (data.fileId) onUpload(data.fileId);
+              }}
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="flex justify-between pt-1">
+        <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
         </Button>
-        <Button onClick={onNext} className="bg-green-600 hover:bg-green-700">
-          Generate Audio <ArrowRight className="ml-2 h-4 w-4" />
+        <Button onClick={onNext} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
+          Generate audio <ArrowRight className="ml-2 h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
   );
 }
 
+/* ─── Step 4: Generate ───────────────────────────────────────────── */
+
 function GenerateStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const { parsedLines, characters, jobId, setJobId, setTimeline } = useVideoStore();
-  const [progress, setProgress] = useState<{ completed: number; total: number; status: string; durations: Record<string, number> } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const hasStarted = useRef(false);
+  const [progress, setProgress] = useState<{ completed: number; total: number; status: string; durations: Record<number, number> } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const started = useRef(false);
+  const allNames = [...new Set(parsedLines.map((l) => l.character))];
+
+  const buildTimeline = (durations: Record<number, number>) => {
+    let t = 0;
+    const timeline: TimelineEntry[] = parsedLines.map((line) => {
+      const dur = (durations[line.index] ?? 2) * 1000;
+      const entry: TimelineEntry = { lineIndex: line.index, startTime: t, duration: dur, type: 'text' };
+      t += dur + 700;
+      return entry;
+    });
+    setTimeline(timeline);
+  };
 
   useEffect(() => {
     const start = async () => {
-      if (hasStarted.current || jobId || parsedLines.length === 0) return;
-      hasStarted.current = true;
-      const textLines = parsedLines.filter((l) => !l.isImage);
-      if (textLines.length === 0) {
-        buildTimeline({});
-        onNext();
-        return;
-      }
-      const linesPayload = textLines.map((l) => ({
+      if (started.current || jobId) return;
+      started.current = true;
+      const payload = parsedLines.map((l) => ({
         index: l.index,
         character: l.character,
         text: l.text,
@@ -394,422 +551,346 @@ function GenerateStep({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       }));
       try {
         const res = await fetch('/api/imessage/generate-audio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lines: linesPayload }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lines: payload }),
         });
         const data = await res.json();
         setJobId(data.jobId);
-      } catch (e) {
-        setError('Failed to start audio generation.');
-      }
+      } catch (_) { setErr('Failed to start audio generation.'); }
     };
     start();
   }, []);
 
   useEffect(() => {
     if (!jobId) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/imessage/audio-progress/${jobId}`);
-        const data = await res.json();
-        setProgress(data);
-        if (data.status === 'done') {
-          clearInterval(interval);
-          buildTimeline(data.durations || {});
-        }
-        if (data.status === 'error') {
-          clearInterval(interval);
-          setError('Audio generation failed.');
-        }
-      } catch (_) {}
-    }, 1000);
-    return () => clearInterval(interval);
+    const iv = setInterval(async () => {
+      const res = await fetch(`/api/imessage/audio-progress/${jobId}`);
+      const data = await res.json();
+      setProgress(data);
+      if (data.status === 'done') { clearInterval(iv); buildTimeline(data.durations || {}); }
+      if (data.status === 'error') { clearInterval(iv); setErr('Audio generation failed.'); }
+    }, 800);
+    return () => clearInterval(iv);
   }, [jobId]);
 
-  const buildTimeline = (durations: Record<string, number>) => {
-    const timeline: TimelineEntry[] = [];
-    let currentTime = 0;
-    for (const line of parsedLines) {
-      const duration = line.isImage ? 3000 : (durations[line.index] || 2) * 1000;
-      timeline.push({ lineIndex: line.index, startTime: currentTime, duration, type: line.isImage ? 'image' : 'text' });
-      currentTime += duration + 800;
-    }
-    setTimeline(timeline);
-  };
-
-  const isDone = progress?.status === 'done';
-  const completed = progress?.completed || 0;
-  const total = progress?.total || parsedLines.filter((l) => !l.isImage).length || 1;
-  const percent = Math.min(100, Math.round((completed / total) * 100));
+  const total   = progress?.total   || parsedLines.length || 1;
+  const done    = progress?.completed || 0;
+  const pct     = Math.min(100, Math.round((done / total) * 100));
+  const isDone  = progress?.status === 'done';
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-white">Generating Audio</h2>
-        <p className="text-gray-400 text-sm">Synthesizing voices for your conversation...</p>
+    <div className="p-8 max-w-lg mx-auto space-y-6">
+      <div className="text-center space-y-1">
+        <h2 className="text-xl font-semibold text-white">Generating audio</h2>
+        <p className="text-sm text-white/40">Synthesising voices for {allNames.join(', ')}…</p>
       </div>
 
-      <Card className="bg-gray-900 border-gray-700">
-        <CardContent className="p-6 space-y-6">
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-300">{isDone ? 'Complete!' : 'Processing...'}</span>
-              <span className="text-green-400 font-bold">{percent}%</span>
-            </div>
-            <Progress value={percent} className="h-2" />
-            <p className="text-xs text-gray-500 text-center">{completed} of {total} lines generated</p>
+      <div className="rounded-xl border border-white/6 bg-white/3 p-5 space-y-5">
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-white/50">{isDone ? 'All done!' : 'Processing…'}</span>
+            <span className="text-green-400 font-semibold">{pct}%</span>
           </div>
-
-          {error && (
-            <div className="flex items-start gap-2 text-red-400 text-sm bg-red-950/30 border border-red-800/50 rounded-lg p-3">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <ScrollArea className="h-48 border border-gray-700 rounded-lg bg-gray-800/30 p-3">
-            <div className="space-y-2">
-              {parsedLines.map((line) => {
-                const done = progress?.durations?.[line.index] !== undefined;
-                const failed = progress && Array.isArray(progress.status) ? false : false;
-                return (
-                  <div key={line.index} className="flex items-center gap-2 text-sm">
-                    {done ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
-                      : isDone ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
-                      : <Loader2 className="h-4 w-4 text-green-400 animate-spin shrink-0" />}
-                    <span className="text-gray-400 font-medium w-20 truncate">{line.character}</span>
-                    <span className="text-gray-500 truncate flex-1">"{line.text}"</span>
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-
-          <div className="flex justify-between">
-            <Button variant="ghost" onClick={onBack} className="text-gray-400">
-              <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
-            </Button>
-            <Button onClick={onNext} disabled={!isDone} className="bg-green-600 hover:bg-green-700">
-              Preview <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function PreviewStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const { parsedLines, characters, timeline, jobId, settings, setExportId } = useVideoStore();
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
-  const audioRefs = useRef<Record<number, HTMLAudioElement>>({});
-  const playbackRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!jobId) return;
-    parsedLines.forEach((line) => {
-      if (!line.isImage) {
-        audioRefs.current[line.index] = new Audio(`/api/imessage/audio-file/${jobId}/${line.index}`);
-      }
-    });
-    return () => { Object.values(audioRefs.current).forEach((a) => a.pause()); };
-  }, [jobId, parsedLines]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [visibleCount]);
-
-  const myCharacter = parsedLines[0]?.character || 'Me';
-
-  const playSequence = (idx: number) => {
-    if (!playbackRef.current || idx >= timeline.length) {
-      setIsPlaying(false);
-      playbackRef.current = false;
-      return;
-    }
-    const entry = timeline[idx];
-    setVisibleCount(idx + 1);
-    const line = parsedLines[entry.lineIndex];
-    if (entry.type === 'text') {
-      const audio = audioRefs.current[entry.lineIndex];
-      if (audio) {
-        audio.currentTime = 0;
-        audio.onended = () => { if (playbackRef.current) timerRef.current = setTimeout(() => playSequence(idx + 1), 400); };
-        audio.play().catch(() => { if (playbackRef.current) timerRef.current = setTimeout(() => playSequence(idx + 1), entry.duration || 2000); });
-      } else {
-        timerRef.current = setTimeout(() => { if (playbackRef.current) playSequence(idx + 1); }, entry.duration || 2000);
-      }
-    } else {
-      timerRef.current = setTimeout(() => { if (playbackRef.current) playSequence(idx + 1); }, 3000);
-    }
-  };
-
-  const togglePlayback = () => {
-    if (isPlaying) {
-      playbackRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      Object.values(audioRefs.current).forEach((a) => a.pause());
-      setIsPlaying(false);
-    } else {
-      setVisibleCount(0);
-      playbackRef.current = true;
-      setIsPlaying(true);
-      timerRef.current = setTimeout(() => playSequence(0), 300);
-    }
-  };
-
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      const res = await fetch('/api/imessage/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, timeline, settings }),
-      });
-      const data = await res.json();
-      setExportId(data.exportId);
-      onNext();
-    } catch (_) {
-      setIsExporting(false);
-    }
-  };
-
-  const visibleLines = parsedLines.slice(0, visibleCount);
-
-  return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Preview</h2>
-        <p className="text-gray-400 text-sm mt-1">Watch the conversation play out and then export.</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className={cn(
-          'rounded-3xl overflow-hidden border border-gray-700 mx-auto',
-          settings.format === '9:16' ? 'w-64 h-[460px]' : 'w-full h-48'
-        )} style={{ background: settings.darkMode ? '#000' : '#f2f2f7' }}>
-          <div className="h-full flex flex-col">
-            <div className={cn('px-4 py-3 border-b', settings.darkMode ? 'border-gray-800' : 'border-gray-200')}>
-              <p className={cn('text-center text-sm font-semibold', settings.darkMode ? 'text-white' : 'text-black')}>
-                {parsedLines.find((l) => l.character !== myCharacter)?.character || 'Contact'}
-              </p>
-            </div>
-            <div className="flex-1 overflow-auto p-3 space-y-2">
-              {visibleLines.map((entry, i) => {
-                const line = entry;
-                const isMe = line.character === myCharacter;
-                return (
-                  <div key={i} className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
-                    <div className={cn(
-                      'rounded-2xl px-3 py-1.5 max-w-[75%] text-xs',
-                      isMe
-                        ? 'bg-green-500 text-white rounded-br-md'
-                        : cn('rounded-bl-md', settings.darkMode ? 'bg-gray-700 text-white' : 'bg-white text-black')
-                    )}>
-                      {line.text}
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={chatEndRef} />
-            </div>
-          </div>
+          <Progress value={pct} className="h-1.5" />
+          <p className="text-xs text-white/25 text-right">{done} / {total} lines</p>
         </div>
 
-        <div className="space-y-4">
-          <Card className="bg-gray-900 border-gray-700">
-            <CardContent className="p-4 space-y-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  size="icon"
-                  className={cn('h-12 w-12 rounded-full', isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700')}
-                  onClick={togglePlayback}
-                >
-                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
-                </Button>
-                <div>
-                  <p className="text-sm font-medium text-white">{isPlaying ? 'Playing...' : 'Press to Play'}</p>
-                  <p className="text-xs text-gray-500">Message {Math.min(visibleCount, timeline.length)} / {timeline.length}</p>
-                </div>
+        {err && (
+          <p className="flex items-center gap-2 text-red-400 text-sm">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {err}
+          </p>
+        )}
+
+        <div className="space-y-2 max-h-48 overflow-auto pr-1">
+          {parsedLines.map((line) => {
+            const lineDone = isDone || (progress?.durations?.[line.index] !== undefined);
+            const col = charColor(line.character, allNames);
+            return (
+              <div key={line.index} className="flex items-center gap-2.5 text-xs">
+                {lineDone
+                  ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                  : <Loader2 className="h-3.5 w-3.5 text-white/30 animate-spin shrink-0" />}
+                <span className={cn('w-16 truncate font-medium shrink-0', col.text)}>{line.character}</span>
+                <span className="text-white/30 truncate">"{line.text}"</span>
               </div>
-
-              <ScrollArea className="h-32 border border-gray-700 rounded-lg bg-gray-800/30 p-2">
-                {timeline.map((entry, i) => {
-                  const line = parsedLines[entry.lineIndex];
-                  const isMe = line?.character === myCharacter;
-                  return (
-                    <div key={i} className={cn('flex items-center gap-2 text-xs py-1', i < visibleCount ? 'text-white' : 'text-gray-600')}>
-                      <div className={cn('h-1.5 w-1.5 rounded-full shrink-0', i < visibleCount ? (isMe ? 'bg-green-400' : 'bg-blue-400') : 'bg-gray-700')} />
-                      <span className="w-16 truncate font-medium">{line?.character}</span>
-                      <span className="truncate">{line?.text?.substring(0, 30)}{(line?.text?.length || 0) > 30 ? '…' : ''}</span>
-                    </div>
-                  );
-                })}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          <Button
-            className="w-full h-11 bg-green-600 hover:bg-green-700"
-            onClick={handleExport}
-            disabled={isExporting}
-          >
-            {isExporting ? 'Starting Export...' : 'Export Video'}
-            <Download className="ml-2 h-4 w-4" />
-          </Button>
+            );
+          })}
         </div>
       </div>
 
       <div className="flex justify-between">
-        <Button variant="ghost" onClick={onBack} className="text-gray-400">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+        <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Cancel
+        </Button>
+        <Button onClick={onNext} disabled={!isDone} className="bg-green-600 hover:bg-green-700 h-9 text-sm px-5">
+          Preview <ArrowRight className="ml-2 h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
   );
 }
 
-function ExportStep({ onReset }: { onReset: () => void }) {
-  const { exportId } = useVideoStore();
-  const [progress, setProgress] = useState<{ status: string; progress: number; errorMessage?: string } | null>(null);
+/* ─── Step 5: Preview ────────────────────────────────────────────── */
+
+function PreviewStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const { parsedLines, timeline, jobId, settings, setExportId } = useVideoStore();
+  const [visible, setVisible] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const audios = useRef<Record<number, HTMLAudioElement>>({});
+  const active = useRef(false);
+  const timer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const allNames = [...new Set(parsedLines.map((l) => l.character))];
+  const sender = parsedLines[0]?.character || '';
 
   useEffect(() => {
-    if (!exportId) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/imessage/export-progress/${exportId}`);
-        const data = await res.json();
-        setProgress(data);
-        if (data.status === 'done' || data.status === 'error') clearInterval(interval);
-      } catch (_) {}
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [exportId]);
+    if (!jobId) return;
+    parsedLines.forEach((l) => {
+      audios.current[l.index] = new Audio(`/api/imessage/audio-file/${jobId}/${l.index}`);
+    });
+    return () => Object.values(audios.current).forEach((a) => a.pause());
+  }, [jobId]);
 
-  const isDone = progress?.status === 'done';
-  const isError = progress?.status === 'error' || !exportId;
-  const percent = progress?.progress || 0;
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [visible]);
 
-  const handleDownload = () => {
-    if (!exportId) return;
-    window.open(`/api/imessage/download/${exportId}`, '_blank');
+  const play = (idx: number) => {
+    if (!active.current || idx >= timeline.length) { setPlaying(false); active.current = false; return; }
+    setVisible(idx + 1);
+    const entry = timeline[idx];
+    const audio = audios.current[entry.lineIndex];
+    if (audio) {
+      audio.currentTime = 0;
+      audio.onended = () => { if (active.current) timer.current = setTimeout(() => play(idx + 1), 400); };
+      audio.play().catch((e: Error) => {
+        if (e.name === 'AbortError') return;
+        if (active.current) timer.current = setTimeout(() => play(idx + 1), entry.duration);
+      });
+    } else {
+      timer.current = setTimeout(() => { if (active.current) play(idx + 1); }, entry.duration || 2000);
+    }
   };
 
+  const toggle = () => {
+    if (playing) {
+      active.current = false;
+      if (timer.current) clearTimeout(timer.current);
+      Object.values(audios.current).forEach((a) => a.pause());
+      setPlaying(false);
+    } else {
+      setVisible(0);
+      active.current = true;
+      setPlaying(true);
+      timer.current = setTimeout(() => play(0), 200);
+    }
+  };
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch('/api/imessage/export', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, timeline, settings }),
+      });
+      const data = await res.json();
+      setExportId(data.exportId);
+      onNext();
+    } catch (_) { setExporting(false); }
+  };
+
+  const chatLines = parsedLines.slice(0, visible);
+
   return (
-    <div className="p-6 max-w-xl mx-auto space-y-6">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-white">Rendering Video</h2>
-        <p className="text-gray-400 text-sm">Combining audio, frames, and background media...</p>
+    <div className="p-8 max-w-3xl mx-auto space-y-5">
+      <div>
+        <h2 className="text-xl font-semibold text-white">Preview</h2>
+        <p className="text-sm text-white/40 mt-1">Watch the conversation play through, then export.</p>
       </div>
 
-      <Card className="bg-gray-900 border-gray-700">
-        <CardContent className="p-6 space-y-6">
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                {isDone ? <CheckCircle2 className="h-5 w-5 text-green-400" />
-                  : isError ? <AlertCircle className="h-5 w-5 text-red-400" />
-                  : <Loader2 className="h-5 w-5 text-green-400 animate-spin" />}
-                <span className="text-sm text-gray-300">
-                  {isDone ? 'Render Complete!' : isError ? 'Render Failed' : 'Processing...'}
-                </span>
-              </div>
-              <span className="text-2xl font-bold text-green-400">{Math.round(percent)}%</span>
-            </div>
-            <Progress value={percent} className="h-3" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        {/* Phone mockup */}
+        <div className={cn(
+          'mx-auto rounded-3xl overflow-hidden border',
+          settings.darkMode ? 'border-white/10 bg-black' : 'border-gray-300 bg-[#f2f2f7]',
+          'w-56 h-[440px] flex flex-col'
+        )}>
+          {/* status bar */}
+          <div className={cn('px-4 py-3 border-b shrink-0', settings.darkMode ? 'border-white/8' : 'border-gray-200')}>
+            <p className={cn('text-center text-xs font-semibold', settings.darkMode ? 'text-white' : 'text-black')}>
+              {parsedLines.find((l) => l.character !== sender)?.character || 'Contact'}
+            </p>
           </div>
+          {/* messages */}
+          <div className="flex-1 overflow-auto p-2.5 space-y-1.5">
+            {chatLines.map((line, i) => {
+              const isMe = line.character === sender;
+              return (
+                <div key={i} className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
+                  <div className={cn(
+                    'px-2.5 py-1 rounded-2xl text-[11px] max-w-[80%] leading-snug',
+                    isMe
+                      ? 'bg-[#34c759] text-white rounded-br-sm'
+                      : settings.darkMode
+                        ? 'bg-white/12 text-white rounded-bl-sm'
+                        : 'bg-white text-black rounded-bl-sm'
+                  )}>
+                    {line.text}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={endRef} />
+          </div>
+        </div>
 
-          {isError && !isDone && (
-            <div className="flex items-start gap-2 text-red-400 text-sm bg-red-950/30 border border-red-800/50 rounded-lg p-3">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{progress?.errorMessage || 'There was a problem rendering your video.'}</span>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <Button
-              className="w-full h-11 bg-green-600 hover:bg-green-700"
-              onClick={handleDownload}
-              disabled={!isDone}
-            >
-              Download MP4 <Download className="ml-2 h-4 w-4" />
-            </Button>
-
-            {isDone && (
-              <Button
-                variant="outline"
-                className="w-full border-gray-700 text-gray-300 hover:text-white"
-                onClick={onReset}
+        {/* Controls */}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-white/6 bg-white/3 p-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggle}
+                className={cn(
+                  'w-11 h-11 rounded-full flex items-center justify-center transition-colors shrink-0',
+                  playing ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                )}
               >
-                Create Another <Home className="ml-2 h-4 w-4" />
-              </Button>
-            )}
+                {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
+              </button>
+              <div>
+                <p className="text-sm text-white font-medium">{playing ? 'Playing…' : visible === 0 ? 'Press play' : 'Paused'}</p>
+                <p className="text-xs text-white/30">{Math.min(visible, timeline.length)} / {timeline.length} messages</p>
+              </div>
+            </div>
+
+            <div className="h-px bg-white/5" />
+
+            {/* Script list */}
+            <div className="space-y-1.5 max-h-36 overflow-auto">
+              {parsedLines.map((line, i) => {
+                const col = charColor(line.character, allNames);
+                const shown = i < visible;
+                return (
+                  <div key={i} className={cn('flex items-center gap-2 text-xs transition-opacity', shown ? 'opacity-100' : 'opacity-20')}>
+                    <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', col.dot)} />
+                    <span className={cn('w-14 truncate font-medium shrink-0', col.text)}>{line.character}</span>
+                    <span className="text-white/40 truncate">{line.text.substring(0, 35)}{line.text.length > 35 ? '…' : ''}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </CardContent>
-      </Card>
+
+          <Button
+            className="w-full h-10 bg-green-600 hover:bg-green-700 text-sm"
+            onClick={doExport}
+            disabled={exporting}
+          >
+            {exporting ? 'Starting export…' : 'Export video'}
+            <Download className="ml-2 h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex justify-between pt-1">
+        <Button variant="ghost" onClick={onBack} className="text-white/40 hover:text-white h-9 text-sm">
+          <ArrowLeft className="mr-2 h-3.5 w-3.5" /> Back
+        </Button>
+      </div>
     </div>
   );
 }
 
-export function TextAutomation() {
-  const [step, setStep] = useState<Step>('script');
-  const { reset } = useVideoStore();
+/* ─── Step 6: Export ─────────────────────────────────────────────── */
 
-  const currentIdx = STEPS.findIndex((s) => s.id === step);
+function ExportStep({ onReset }: { onReset: () => void }) {
+  const { exportId } = useVideoStore();
+  const [prog, setProg] = useState<{ status: string; progress: number; errorMessage?: string } | null>(null);
 
-  const handleReset = () => {
-    reset();
-    setStep('script');
-  };
+  useEffect(() => {
+    if (!exportId) return;
+    const iv = setInterval(async () => {
+      const res = await fetch(`/api/imessage/export-progress/${exportId}`);
+      const data = await res.json();
+      setProg(data);
+      if (data.status === 'done' || data.status === 'error') clearInterval(iv);
+    }, 800);
+    return () => clearInterval(iv);
+  }, [exportId]);
+
+  const isDone  = prog?.status === 'done';
+  const isError = prog?.status === 'error';
+  const pct     = prog?.progress || 0;
 
   return (
-    <div className="flex min-h-screen bg-[#0a0a0a]">
-      <aside className="w-52 border-r border-gray-800 bg-[#0d0d0d] p-4 flex flex-col shrink-0 hidden sm:flex">
-        <div className="mb-6">
-          <p className="text-xs text-gray-500 uppercase tracking-wider">iMessage Video Studio</p>
-        </div>
-        <nav className="space-y-5 flex-1">
-          {STEPS.map((s, i) => {
-            const isActive = s.id === step;
-            const isPast = i < currentIdx;
-            return (
-              <div key={s.id} className="relative">
-                {i < STEPS.length - 1 && (
-                  <div className={cn('absolute left-3 top-8 bottom-[-20px] w-px', isPast ? 'bg-green-500' : 'bg-gray-700')} />
-                )}
-                <div className={cn('flex gap-3 items-start', i > currentIdx ? 'opacity-40 pointer-events-none' : '')}>
-                  <div className={cn(
-                    'w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 shrink-0 relative z-10',
-                    isActive ? 'bg-green-500 border-green-500 text-white' : isPast ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-transparent border-gray-600 text-gray-500'
-                  )}>
-                    {isPast ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
-                  </div>
-                  <div>
-                    <p className={cn('text-xs font-medium', isActive ? 'text-white' : 'text-gray-500')}>{s.title}</p>
-                    <p className="text-xs text-gray-600 mt-0.5">{s.description}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </nav>
-        <div className="pt-4 border-t border-gray-800">
-          <button onClick={handleReset} className="text-xs text-gray-600 hover:text-gray-400">Reset wizard</button>
-        </div>
-      </aside>
+    <div className="p-8 max-w-md mx-auto space-y-6">
+      <div className="text-center space-y-1">
+        <h2 className="text-xl font-semibold text-white">Rendering video</h2>
+        <p className="text-sm text-white/40">Combining audio, frames & background…</p>
+      </div>
 
-      <main className="flex-1 overflow-auto">
-        {step === 'script' && <ScriptStep onNext={() => setStep('characters')} />}
-        {step === 'characters' && <CharactersStep onNext={() => setStep('generate')} onBack={() => setStep('script')} />}
-        {step === 'generate' && <GenerateStep onNext={() => setStep('preview')} onBack={() => setStep('characters')} />}
-        {step === 'preview' && <PreviewStep onNext={() => setStep('export')} onBack={() => setStep('generate')} />}
-        {step === 'export' && <ExportStep onReset={handleReset} />}
-      </main>
+      <div className="rounded-xl border border-white/6 bg-white/3 p-6 space-y-5">
+        <div className="space-y-2">
+          <div className="flex justify-between items-center text-sm">
+            <div className="flex items-center gap-2 text-white/60">
+              {isDone   ? <CheckCircle2 className="h-4 w-4 text-green-400" /> :
+               isError  ? <AlertCircle  className="h-4 w-4 text-red-400"   /> :
+                          <Loader2      className="h-4 w-4 animate-spin text-white/30" />}
+              {isDone ? 'Done!' : isError ? 'Failed' : 'Rendering…'}
+            </div>
+            <span className="text-green-400 font-semibold text-lg">{Math.round(pct)}%</span>
+          </div>
+          <Progress value={pct} className="h-2" />
+        </div>
+
+        {isError && (
+          <p className="text-sm text-red-400 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            {prog?.errorMessage || 'Something went wrong during rendering.'}
+          </p>
+        )}
+
+        <div className="space-y-2">
+          <Button
+            className="w-full h-10 bg-green-600 hover:bg-green-700 text-sm"
+            onClick={() => window.open(`/api/imessage/download/${exportId}`, '_blank')}
+            disabled={!isDone}
+          >
+            Download MP4 <Download className="ml-2 h-3.5 w-3.5" />
+          </Button>
+          {isDone && (
+            <Button
+              variant="ghost"
+              className="w-full h-9 text-white/40 hover:text-white text-sm"
+              onClick={onReset}
+            >
+              Create another
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Root ───────────────────────────────────────────────────────── */
+
+export function TextAutomation() {
+  const [step, setStep] = useState<Step>('cast');
+  const { reset } = useVideoStore();
+
+  const handleReset = () => { reset(); setStep('cast'); };
+
+  return (
+    <div className="min-h-screen bg-[#080808] flex flex-col">
+      <StepBar current={step} />
+      <div className="flex-1">
+        {step === 'cast'     && <CastStep     onNext={() => setStep('script')}   />}
+        {step === 'script'   && <ScriptStep   onNext={() => setStep('voices')}   onBack={() => setStep('cast')}     />}
+        {step === 'voices'   && <VoicesStep   onNext={() => setStep('generate')} onBack={() => setStep('script')}   />}
+        {step === 'generate' && <GenerateStep onNext={() => setStep('preview')}  onBack={() => setStep('voices')}   />}
+        {step === 'preview'  && <PreviewStep  onNext={() => setStep('export')}   onBack={() => setStep('generate')} />}
+        {step === 'export'   && <ExportStep   onReset={handleReset}              />}
+      </div>
     </div>
   );
 }
