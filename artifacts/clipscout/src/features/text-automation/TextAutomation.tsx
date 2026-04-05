@@ -37,7 +37,7 @@ const CHAR_COLORS = [
 
 function charColor(name: string, allNames: string[]) {
   const idx = allNames.indexOf(name);
-  return CHAR_COLORS[idx % CHAR_COLORS.length];
+  return CHAR_COLORS[(idx >= 0 ? idx : 0) % CHAR_COLORS.length];
 }
 
 /* ─── Step Indicator ─────────────────────────────────────────────── */

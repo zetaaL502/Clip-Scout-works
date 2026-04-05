@@ -1,0 +1,108 @@
+L
+"DO NOT touch or break any existing code. Add these new things only as separate new components and files.
+
+**PART 1 - Replace Edge TTS with Kokoro TTS:**
+
+- Remove Edge TTS completely from the project
+- Install kokoro or use Hugging Face Kokoro API
+- Add HUGGINGFACE_API_KEY to .env file
+- Every place Edge TTS was used replace with Kokoro API call
+- API endpoint: https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M
+- Available voices: af_heart, af_bella, af_sarah, af_sky, af_nicole, am_adam, am_michael, bf_emma, bf_isabella, bm_george, bm_lewis
+- For long scripts: automatically split text into 500 character chunks, generate audio per chunk, combine all chunks into one final MP3 file
+- Delete temp chunk files after combining
+
+**PART 2 - iMessage Conversation Builder:**
+
+**INPUT UI - create new component ConversationBuilder.jsx:**
+
+Character setup section:
+- Input field at top labeled 'Who are you texting?'
+- User types contact name example Kaleb
+- Auto generates initials live example Kaleb = KB
+- Gray circle showing initials next to name input
+- Plus button to add more characters
+- Each added character has:
+  - Name input field
+  - Auto generated initials circle
+  - Voice selector dropdown with all Kokoro voices: af_heart, af_bella, af_sarah, af_sky, af_nicole, am_adam, am_michael, bf_emma, bf_isabella, bm_george, bm_lewis
+  - Delete button
+- First character = You, green bubbles right side
+- All other characters = Them, gray bubbles left side
+- Each character gets their own selected Kokoro voice
+
+Script input section:
+- Large textarea minimum 300px height full width
+- Placeholder:
+'Paste your script here. Example:
+Maria: hey you free later?
+Kaleb: yeah why whats up
+Maria: [image]
+Kaleb: [video]'
+- Process Script button below
+
+Script parser:
+- Detect character name before colon example Maria: or Kaleb:
+- Match to added characters list
+- Each line becomes one message bubble
+- [image] tag = image bubble, prompt user to upload image for that spot
+- [video] tag = video bubble, prompt user to upload video for that spot
+- Unknown character names show error: 'Character not found, please add them first'
+
+**PREVIEW UI:**
+
+iMessage style header at top:
+- White background
+- Back arrow on left with blue 99+ notification bubble
+- Circular avatar center with contact initials inside
+- Contact name centered below avatar exactly as user defined
+- Small > arrow next to name
+- Thin border bottom separating header from messages
+- Do NOT overlap messages
+
+Message bubbles:
+- You = green bubble right side rounded corners
+- Them = gray bubble left side rounded corners
+- Character name shown above their bubble in small text
+- Smooth animation: each bubble appears one by one typing indicator before each message appears
+- Image bubble: shows uploaded image inside bubble with camera notification sound on appear
+- Video bubble: plays video inline inside bubble on appear
+
+**PART 3 - Voice Generation Per Character:**
+
+- Each character has their selected Kokoro voice from dropdown
+- When generating audio:
+  - Maria lines → generated with Maria's selected voice
+  - Kaleb lines → generated with Kaleb's selected voice
+  - Each line generates separately
+  - All lines combined in order into final audio file
+- Generate Audio button below preview
+- Progress bar while generating
+- Download MP3 button when done
+- For long scripts chunk each character line into 500 chars max before sending to Kokoro API
+- Combine all chunks in correct order
+
+**PART 4 - Image and Video handling:**
+
+- When [image] detected in script:
+  - Show upload prompt for that specific message spot
+  - After upload show image inside bubble
+  - Play subtle camera click notification sound when image bubble appears
+- When [video] detected in script:
+  - Show upload prompt for that specific message spot
+  - After upload show video player inside bubble
+  - Video plays automatically when that bubble appears in sequence
+
+**TECHNICAL REQUIREMENTS:**
+- HUGGINGFACE_API_KEY stored in .env
+- All Kokoro API calls go through Express backend not frontend
+- New Express routes added at bottom of existing app only with /conversation prefix
+- Create utils/kokoroTTS.js for all TTS logic including chunking and combining
+- Use ffmpeg-static to combine audio chunks
+- All new components in separate files
+- DO NOT modify any existing components or routes
+- Match existing app styling exactly
+- Handle all errors gracefully with clear messages
+- Clean up all temp files after processing"
+
+---
