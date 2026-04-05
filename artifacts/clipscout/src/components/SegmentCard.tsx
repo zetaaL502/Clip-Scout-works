@@ -339,8 +339,8 @@ export function SegmentCard({
             disabled={loadingManual || !manualKeyword.trim()}
             className="flex items-center justify-center gap-1.5 w-full text-xs font-medium text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-2.5 py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 border border-gray-700"
           >
-            <Search size={12} />
             {loadingManual ? 'Searching…' : 'Search'}
+            <Search size={12} />
           </button>
         </div>
 
