@@ -55,6 +55,7 @@ export function SegmentCard({
   const [manualSource, setManualSource] = useState<ManualSource>('pexels');
   const [loadingManual, setLoadingManual] = useState(false);
   const manualPageRef = useRef(1);
+  const [textExpanded, setTextExpanded] = useState(false);
 
   useEffect(() => {
     if (isPreloaded && initialClips.length > 0 && !loadedRef.current) {
@@ -242,7 +243,19 @@ export function SegmentCard({
 
       {/* Script text */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-800">
-        <p className="text-gray-300 text-sm leading-relaxed line-clamp-3">{segment.text_body}</p>
+        <p className={`text-gray-300 text-sm leading-relaxed ${textExpanded ? '' : 'line-clamp-3'}`}>
+          {segment.text_body}
+        </p>
+        <button
+          onClick={() => setTextExpanded((v) => !v)}
+          className="mt-1.5 flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+        >
+          <ChevronDown
+            size={13}
+            className={`transition-transform duration-200 ${textExpanded ? 'rotate-180' : ''}`}
+          />
+          {textExpanded ? 'Show less' : 'Show full text'}
+        </button>
       </div>
 
       {/* Single control bar: search LEFT, Add 4 More RIGHT */}
