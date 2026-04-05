@@ -134,7 +134,7 @@ export async function fetchPixabayClips(keywords: string, page: number, segmentI
   const isLandscape = (width?: number, height?: number) =>
     typeof width === 'number' && typeof height === 'number' && width > height;
 
-  const mapHits = (hits: Array<{ id: number; picture_id: string; duration: number; videos: Record<string, { url: string; width: number; height: number } | undefined> }>) =>
+  const mapHits = (hits: Array<{ id: number; duration: number; videos: Record<string, { url: string; width: number; height: number; thumbnail?: string } | undefined> }>) =>
     hits
       .map((hit) => {
         const video = hit.videos['large'] ?? hit.videos['medium'] ?? hit.videos['small'] ?? hit.videos['tiny'];
@@ -143,7 +143,7 @@ export async function fetchPixabayClips(keywords: string, page: number, segmentI
           id: `pixabay-${hit.id}-${page}`,
           segmentId,
           source: 'pixabay' as const,
-          thumbnail_url: `https://i.vimeocdn.com/video/${hit.picture_id}_640x360.jpg`,
+          thumbnail_url: video.thumbnail ?? '',
           media_url: video.url,
           width: video.width,
           height: video.height,
@@ -188,9 +188,8 @@ export async function fetchPixabayClips(keywords: string, page: number, segmentI
   const data = (await res.json()) as {
     hits: Array<{
       id: number;
-      picture_id: string;
       duration: number;
-      videos: Record<string, { url: string; width: number; height: number } | undefined>;
+      videos: Record<string, { url: string; width: number; height: number; thumbnail?: string } | undefined>;
     }>;
   };
   return mapHits(data.hits ?? []);

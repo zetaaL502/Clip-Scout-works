@@ -45,13 +45,12 @@ router.post("/pixabay-proxy", async (req, res) => {
     const data = (await pixabayRes.json()) as {
       hits: Array<{
         id: number;
-        picture_id: string;
         duration: number;
         videos: {
-          large?: { url: string; width: number; height: number };
-          medium?: { url: string; width: number; height: number };
-          small?: { url: string; width: number; height: number };
-          tiny?: { url: string; width: number; height: number };
+          large?: { url: string; width: number; height: number; thumbnail: string };
+          medium?: { url: string; width: number; height: number; thumbnail: string };
+          small?: { url: string; width: number; height: number; thumbnail: string };
+          tiny?: { url: string; width: number; height: number; thumbnail: string };
         };
       }>;
     };
@@ -62,7 +61,7 @@ router.post("/pixabay-proxy", async (req, res) => {
         if (!video?.url) return null;
         return {
           id: String(hit.id),
-          thumbnail_url: `https://i.vimeocdn.com/video/${hit.picture_id}_640x360.jpg`,
+          thumbnail_url: video.thumbnail ?? "",
           media_url: video.url,
           width: video.width,
           height: video.height,

@@ -78995,7 +78995,7 @@ router3.post("/pixabay-proxy", async (req, res) => {
       if (!video?.url) return null;
       return {
         id: String(hit.id),
-        thumbnail_url: `https://i.vimeocdn.com/video/${hit.picture_id}_640x360.jpg`,
+        thumbnail_url: video.thumbnail ?? "",
         media_url: video.url,
         width: video.width,
         height: video.height,
