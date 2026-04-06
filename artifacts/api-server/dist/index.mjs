@@ -26251,7 +26251,7 @@ var require_thread_stream = __commonJS({
 var require_transport = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/lib/transport.js"(exports, module) {
     "use strict";
-    var { createRequire } = __require("module");
+    var { createRequire: createRequire2 } = __require("module");
     var getCallers = require_caller();
     var { join: join2, isAbsolute, sep } = __require("node:path");
     var sleep4 = require_atomic_sleep();
@@ -26362,7 +26362,7 @@ var require_transport = __commonJS({
         for (const filePath of callers) {
           try {
             const context = filePath === "node:repl" ? process.cwd() + sep : filePath;
-            fixTarget2 = createRequire(context).resolve(origin);
+            fixTarget2 = createRequire2(context).resolve(origin);
             break;
           } catch (err) {
             continue;
@@ -85456,6 +85456,8 @@ import fs4 from "fs";
 import path5 from "path";
 import os2 from "os";
 import { spawn as spawn3 } from "child_process";
+import { createRequire } from "module";
+var require2 = createRequire(import.meta.url);
 var KOKORO_VOICES = [
   { id: "af_heart", label: "Heart", accent: "American", gender: "Female" },
   { id: "af_bella", label: "Bella", accent: "American", gender: "Female" },
@@ -85469,11 +85471,35 @@ var KOKORO_VOICES = [
   { id: "bm_george", label: "George", accent: "British", gender: "Male" },
   { id: "bm_lewis", label: "Lewis", accent: "British", gender: "Male" }
 ];
+var GTTS_LANG_MAP = {
+  af_heart: "en",
+  af_bella: "en",
+  af_sarah: "en",
+  af_sky: "en",
+  af_nicole: "en",
+  am_adam: "en",
+  am_michael: "en",
+  bf_emma: "en-uk",
+  bf_isabella: "en-uk",
+  bm_george: "en-uk",
+  bm_lewis: "en-uk"
+};
 var CHUNK_SIZE = 500;
-var MAX_RETRIES = 4;
-var RETRY_DELAY_MS = 8e3;
+var MAX_RETRIES = 3;
+var RETRY_DELAY = 6e3;
+var HF_ENDPOINT = "https://router.huggingface.co/hf-inference/models/hexgrad/Kokoro-82M";
 function sleep3(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+function detectSpeed(text) {
+  const exclamations = (text.match(/!/g) || []).length;
+  const hasAllCaps = /\b[A-Z]{3,}\b/.test(text);
+  const hasEllipsis = text.includes("...");
+  const sadWords = /\b(sorry|miss|cry|hurt|pain|broken|lost|alone|scared|afraid)\b/i.test(text);
+  if (exclamations >= 2 || hasAllCaps) return 1.15;
+  if (exclamations === 1) return 1.05;
+  if (hasEllipsis || sadWords) return 0.9;
+  return 1;
 }
 function chunkText(text) {
   const trimmed = text.trim();
@@ -85488,110 +85514,38 @@ function chunkText(text) {
     let idx = CHUNK_SIZE;
     const sentMatch = remaining.slice(0, CHUNK_SIZE).match(/[.!?]\s/g);
     if (sentMatch) {
-      const lastSent = remaining.slice(0, CHUNK_SIZE).lastIndexOf(sentMatch[sentMatch.length - 1]);
-      if (lastSent > CHUNK_SIZE * 0.4) idx = lastSent + 2;
+      const last = remaining.slice(0, CHUNK_SIZE).lastIndexOf(sentMatch[sentMatch.length - 1]);
+      if (last > CHUNK_SIZE * 0.4) idx = last + 2;
     }
     if (idx === CHUNK_SIZE) {
-      const spaceIdx = remaining.lastIndexOf(" ", CHUNK_SIZE);
-      if (spaceIdx > 0) idx = spaceIdx;
+      const sp = remaining.lastIndexOf(" ", CHUNK_SIZE);
+      if (sp > 0) idx = sp;
     }
     chunks.push(remaining.slice(0, idx).trim());
     remaining = remaining.slice(idx).trim();
   }
   return chunks.filter((s) => s.length > 0);
 }
-async function callKokoroAPI(text, voice) {
-  const apiKey = process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey) throw new Error("HUGGINGFACE_API_KEY environment variable is not set");
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const res = await fetch(
-      "https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "x-wait-for-model": "true"
-        },
-        body: JSON.stringify({ inputs: text, parameters: { voice } })
-      }
-    );
-    if (res.status === 503) {
-      const errText = await res.text().catch(() => "");
-      logger.info({ attempt, errText }, "Kokoro model loading, retrying...");
-      await sleep3(RETRY_DELAY_MS);
-      continue;
-    }
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "unknown error");
-      throw new Error(`Kokoro API returned ${res.status}: ${errText}`);
-    }
-    const contentType = res.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      const json = await res.json();
-      if (json.error) {
-        if (attempt < MAX_RETRIES - 1) {
-          const waitMs = json.estimated_time ? json.estimated_time * 1e3 + 2e3 : RETRY_DELAY_MS;
-          logger.info({ attempt, error: json.error, waitMs }, "Kokoro not ready, retrying...");
-          await sleep3(waitMs);
-          continue;
-        }
-        throw new Error(`Kokoro API error: ${json.error}`);
-      }
-      throw new Error("Kokoro API returned JSON instead of audio");
-    }
-    const ab = await res.arrayBuffer();
-    return Buffer.from(ab);
-  }
-  throw new Error(`Kokoro API failed after ${MAX_RETRIES} retries (model may still be loading)`);
-}
 function convertToMp3(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const stderr = [];
-    const child = spawn3("ffmpeg", [
-      "-y",
-      "-i",
-      inputPath,
-      "-acodec",
-      "libmp3lame",
-      "-b:a",
-      "128k",
-      outputPath
-    ]);
+    const child = spawn3("ffmpeg", ["-y", "-i", inputPath, "-acodec", "libmp3lame", "-b:a", "128k", outputPath]);
     child.stderr.on("data", (d) => stderr.push(d.toString()));
-    child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg convert exited with code ${code}: ${stderr.slice(-3).join("")}`));
-    });
+    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg convert (code ${code}): ${stderr.slice(-2).join("").trim()}`)));
     child.on("error", reject);
   });
 }
 function concatMp3Files(inputFiles, outputPath) {
   return new Promise((resolve, reject) => {
     const listFile = outputPath + ".list.txt";
-    fs4.writeFileSync(
-      listFile,
-      inputFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n")
-    );
-    const child = spawn3("ffmpeg", [
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      listFile,
-      "-c",
-      "copy",
-      outputPath
-    ]);
+    fs4.writeFileSync(listFile, inputFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
+    const child = spawn3("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", outputPath]);
     child.on("close", (code) => {
       try {
         fs4.unlinkSync(listFile);
       } catch (_2) {
       }
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg concat exited with code ${code}`));
+      code === 0 ? resolve() : reject(new Error(`ffmpeg concat (code ${code})`));
     });
     child.on("error", (err) => {
       try {
@@ -85602,7 +85556,54 @@ function concatMp3Files(inputFiles, outputPath) {
     });
   });
 }
-async function generateAudio(text, voice, outputMp3Path) {
+async function callKokoroAPI(text, voice) {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) throw new Error("HUGGINGFACE_API_KEY not set");
+  const speed = detectSpeed(text);
+  logger.info({ voice, speed, keyPrefix: apiKey.slice(0, 6) }, "Calling Kokoro API");
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    let res;
+    try {
+      res = await fetch(HF_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "x-wait-for-model": "true"
+        },
+        body: JSON.stringify({ inputs: text, parameters: { voice, speed } })
+      });
+    } catch (fetchErr) {
+      throw new Error(`Network error: ${String(fetchErr)}`);
+    }
+    logger.info({ status: res.status, contentType: res.headers.get("content-type"), attempt }, "Kokoro API response");
+    if (res.status === 503) {
+      await sleep3(RETRY_DELAY);
+      continue;
+    }
+    if (res.status === 404) {
+      throw new Error(
+        "KOKORO_NOT_AUTHORIZED: The Kokoro-82M model requires you to accept its license. Please visit https://huggingface.co/hexgrad/Kokoro-82M and click 'Access repository', then try again."
+      );
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "unknown");
+      throw new Error(`Kokoro API ${res.status}: ${errText}`);
+    }
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const json = await res.json();
+      if (json.error && attempt < MAX_RETRIES - 1) {
+        await sleep3(json.estimated_time ? json.estimated_time * 1e3 + 2e3 : RETRY_DELAY);
+        continue;
+      }
+      throw new Error(`Kokoro error: ${json.error ?? "unexpected JSON"}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+  throw new Error(`Kokoro failed after ${MAX_RETRIES} retries`);
+}
+async function generateKokoroAudio(text, voice, outputMp3Path) {
   const chunks = chunkText(text);
   const tmpDir = fs4.mkdtempSync(path5.join(os2.tmpdir(), "kokoro_"));
   const chunkMp3s = [];
@@ -85610,7 +85611,6 @@ async function generateAudio(text, voice, outputMp3Path) {
     for (let i = 0; i < chunks.length; i++) {
       const rawPath = path5.join(tmpDir, `chunk_${i}.raw`);
       const mp3Path = path5.join(tmpDir, `chunk_${i}.mp3`);
-      logger.debug({ chunk: i, chars: chunks[i].length, voice }, "Calling Kokoro API");
       const audioBytes = await callKokoroAPI(chunks[i], voice);
       fs4.writeFileSync(rawPath, audioBytes);
       await convertToMp3(rawPath, mp3Path);
@@ -85637,6 +85637,40 @@ async function generateAudio(text, voice, outputMp3Path) {
     } catch (_2) {
     }
   }
+}
+function generateGTTSAudio(text, voice, outputMp3Path) {
+  return new Promise((resolve, reject) => {
+    try {
+      const gtts = require2("node-gtts");
+      const lang = GTTS_LANG_MAP[voice] ?? "en";
+      const g = gtts(lang);
+      g.save(outputMp3Path, text, (err) => {
+        if (err) reject(new Error(`gTTS error: ${err.message}`));
+        else resolve();
+      });
+    } catch (e) {
+      reject(new Error(`gTTS load error: ${String(e)}`));
+    }
+  });
+}
+var kokoroUnavailable = false;
+async function generateAudio(text, voice, outputMp3Path) {
+  if (!kokoroUnavailable) {
+    try {
+      await generateKokoroAudio(text, voice, outputMp3Path);
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("KOKORO_NOT_AUTHORIZED") || msg.includes("not set")) {
+        logger.warn({ msg: msg.slice(0, 120) }, "Kokoro not available, switching to gTTS fallback");
+        kokoroUnavailable = true;
+      } else {
+        throw e;
+      }
+    }
+  }
+  logger.info({ voice }, "Using gTTS fallback");
+  await generateGTTSAudio(text, voice, outputMp3Path);
 }
 
 // src/routes/imessage/voices.ts
@@ -85685,12 +85719,12 @@ router10.post("/imessage/preview-voice", async (req, res) => {
       }
     });
   } catch (e) {
-    logger.warn({ e, voice }, "Voice preview generation failed");
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.warn({ err: msg, voice }, "Voice preview generation failed");
     try {
       fs5.unlinkSync(tmpFile);
     } catch (_2) {
     }
-    const msg = e instanceof Error ? e.message : "TTS generation failed";
     res.status(500).json({ error: msg });
   }
 });
@@ -86072,22 +86106,8 @@ fs9.mkdirSync(convDir, { recursive: true });
 function concatMp3Files2(inputFiles, outputPath) {
   return new Promise((resolve, reject) => {
     const listFile = outputPath + ".list.txt";
-    fs9.writeFileSync(
-      listFile,
-      inputFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n")
-    );
-    const child = spawn5("ffmpeg", [
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      listFile,
-      "-c",
-      "copy",
-      outputPath
-    ]);
+    fs9.writeFileSync(listFile, inputFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
+    const child = spawn5("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", outputPath]);
     child.on("close", (code) => {
       try {
         fs9.unlinkSync(listFile);
@@ -86118,13 +86138,14 @@ async function processConvJob(job, lines) {
       await generateAudio(line.text, line.voice, mp3Path);
       lineMp3s.push(mp3Path);
     } catch (e) {
-      logger.warn({ i, e }, "Conversation line TTS failed, skipping");
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.warn({ i, err: msg }, "Conversation line TTS failed, skipping");
     }
     job.completed = i + 1;
   }
   if (lineMp3s.length === 0) {
     job.status = "error";
-    job.errorMessage = "No audio lines were generated";
+    job.errorMessage = "No audio was generated. Check that HUGGINGFACE_API_KEY is set and the Kokoro model is reachable.";
     return;
   }
   const outputPath = path10.join(convDir, `${job.jobId}_combined.mp3`);
@@ -86147,6 +86168,10 @@ async function processConvJob(job, lines) {
   job.status = "done";
 }
 router14.post("/conversation/generate", async (req, res) => {
+  if (!process.env.HUGGINGFACE_API_KEY) {
+    res.status(500).json({ error: "HUGGINGFACE_API_KEY is not configured on the server." });
+    return;
+  }
   const { lines } = req.body;
   if (!lines || !Array.isArray(lines) || lines.length === 0) {
     res.status(400).json({ error: "lines array is required" });
@@ -86161,9 +86186,10 @@ router14.post("/conversation/generate", async (req, res) => {
   };
   convJobs.set(jobId, job);
   processConvJob(job, lines).catch((err) => {
-    logger.error({ err, jobId }, "Conversation generate job failed");
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: msg, jobId }, "Conversation generate job failed");
     job.status = "error";
-    job.errorMessage = String(err);
+    job.errorMessage = msg;
   });
   res.json({ jobId });
 });
@@ -86174,13 +86200,7 @@ router14.get("/conversation/progress/:jobId", async (req, res) => {
     res.status(404).json({ error: "Job not found" });
     return;
   }
-  res.json({
-    jobId: job.jobId,
-    status: job.status,
-    completed: job.completed,
-    total: job.total,
-    errorMessage: job.errorMessage
-  });
+  res.json({ jobId: job.jobId, status: job.status, completed: job.completed, total: job.total, errorMessage: job.errorMessage });
 });
 router14.get("/conversation/download/:jobId", async (req, res) => {
   const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0] : req.params.jobId;

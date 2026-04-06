@@ -33,9 +33,9 @@ router.post("/imessage/preview-voice", async (req, res): Promise<void> => {
     stream.pipe(res);
     stream.on("end", () => { try { fs.unlinkSync(tmpFile); } catch (_) {} });
   } catch (e) {
-    logger.warn({ e, voice }, "Voice preview generation failed");
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.warn({ err: msg, voice }, "Voice preview generation failed");
     try { fs.unlinkSync(tmpFile); } catch (_) {}
-    const msg = e instanceof Error ? e.message : "TTS generation failed";
     res.status(500).json({ error: msg });
   }
 });
