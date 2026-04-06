@@ -26,7 +26,7 @@ interface AudioJob {
   dir: string;
 }
 
-const jobs = new Map<string, AudioJob>();
+export const jobs = new Map<string, AudioJob>();
 
 function getAudioDir(jobId: string): string {
   const dir = path.join("/tmp", "audio_jobs", jobId);
@@ -170,5 +170,4 @@ router.get("/imessage/audio-file/:jobId/:lineIndex", async (req, res): Promise<v
   fs.createReadStream(filePath).pipe(res);
 });
 
-export { jobs };
 export default router;

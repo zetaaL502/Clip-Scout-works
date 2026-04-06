@@ -13,6 +13,7 @@ import {
   audioGenerationRouter,
   uploadRouter,
   imessageExportRouter,
+  videoExportRouter,
 } from "./imessage";
 import {
   conversationGenerateRouter,
@@ -34,6 +35,7 @@ router.use(previewVoiceRouter);
 router.use(audioGenerationRouter);
 router.use(uploadRouter);
 router.use(imessageExportRouter);
+router.use(videoExportRouter);
 router.use(conversationGenerateRouter);
 router.use(conversationUploadRouter);
 

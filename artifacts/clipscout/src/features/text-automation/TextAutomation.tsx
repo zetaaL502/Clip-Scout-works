@@ -519,7 +519,7 @@ function TypingDots({ isMe, dark }: { isMe: boolean; dark: boolean }) {
 
 function PreviewStep({ characters, lines, onLinesChange, onGenerate, onBack }: {
   characters: Character[]; lines: ParsedLine[];
-  onLinesChange: (l: ParsedLine[]) => void; onGenerate: () => void; onBack: () => void;
+  onLinesChange: (l: ParsedLine[]) => void; onGenerate: (darkMode: boolean) => void; onBack: () => void;
 }) {
   const [visibleCount, setVisibleCount] = useState(lines.length);
   const [playing, setPlaying] = useState(false);
@@ -762,8 +762,8 @@ function PreviewStep({ characters, lines, onLinesChange, onGenerate, onBack }: {
             </p>
           </div>
 
-          <Button onClick={onGenerate} className="w-full bg-green-600 hover:bg-green-700 h-9 text-sm">
-            <Mic className="mr-2 h-4 w-4" /> Generate Audio
+          <Button onClick={() => onGenerate(dark)} className="w-full bg-green-600 hover:bg-green-700 h-9 text-sm">
+            <Mic className="mr-2 h-4 w-4" /> Generate Video
           </Button>
         </div>
       </div>
@@ -777,25 +777,32 @@ function PreviewStep({ characters, lines, onLinesChange, onGenerate, onBack }: {
   );
 }
 
-/* ─── Step 4: Audio ─────────────────────────────────────────────── */
+/* ─── Step 4: Audio + Video Generation ─────────────────────────── */
 
-function AudioStep({ lines, characters, onDone, onBack }: {
-  lines: ParsedLine[]; characters: Character[];
-  onDone: (jobId: string) => void; onBack: () => void;
+function AudioStep({ lines, characters, darkMode, onDone, onBack }: {
+  lines: ParsedLine[]; characters: Character[]; darkMode: boolean;
+  onDone: (audioJobId: string, videoJobId: string) => void; onBack: () => void;
 }) {
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{ status: string; completed: number; total: number; errorMessage?: string } | null>(null);
+  const [phase, setPhase] = useState<'audio' | 'video'>('audio');
+  const [audioJobId, setAudioJobId] = useState<string | null>(null);
+  const [audioProgress, setAudioProgress] = useState<{ status: string; completed: number; total: number; durations?: Record<number, number> } | null>(null);
+  const [videoJobId, setVideoJobId] = useState<string | null>(null);
+  const [videoProgress, setVideoProgress] = useState<{ status: string; progress: number; errorMessage?: string } | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const started = useRef(false);
 
+  /* ── Phase 1: start audio generation ── */
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    const payload = lines.filter((l) => l.type === 'text').map((l) => {
+
+    const textLines = lines.filter((l) => l.type === 'text');
+    const payload = textLines.map((l, idx) => {
       const char = characters.find((c) => c.id === l.charId);
-      return { text: l.text, voice: char?.voice ?? 'Aoede', type: 'text' as const };
+      return { index: idx, character: l.charName, text: l.text, voice: char?.voice ?? 'Aoede' };
     });
-    fetch('/api/conversation/generate', {
+
+    fetch('/api/imessage/generate-audio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lines: payload }),
@@ -803,33 +810,94 @@ function AudioStep({ lines, characters, onDone, onBack }: {
       .then((r) => r.json())
       .then((d: { jobId?: string; error?: string }) => {
         if (d.error) { setStartError(d.error); return; }
-        if (d.jobId) setJobId(d.jobId);
+        if (d.jobId) setAudioJobId(d.jobId);
       })
       .catch((e) => setStartError(String(e)));
   }, []);
 
+  /* ── Phase 1: poll audio ── */
   useEffect(() => {
-    if (!jobId) return;
+    if (!audioJobId) return;
     const iv = setInterval(async () => {
-      const res = await fetch(`/api/conversation/progress/${jobId}`);
-      const data = await res.json() as { status: string; completed: number; total: number; errorMessage?: string };
-      setProgress(data);
-      if (data.status === 'done') { clearInterval(iv); onDone(jobId); }
-      if (data.status === 'error') clearInterval(iv);
+      try {
+        const res = await fetch(`/api/imessage/audio-progress/${audioJobId}`);
+        const data = await res.json() as { status: string; completed: number; total: number; durations: Record<number, number> };
+        setAudioProgress(data);
+        if (data.status === 'done') {
+          clearInterval(iv);
+          startVideo(audioJobId, data.durations);
+        }
+        if (data.status === 'error') clearInterval(iv);
+      } catch (_) {}
     }, 1500);
     return () => clearInterval(iv);
-  }, [jobId]);
+  }, [audioJobId]);
 
-  const total = progress?.total ?? lines.filter(l => l.type === 'text').length;
-  const done  = progress?.completed ?? 0;
-  const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
-  const isErr = progress?.status === 'error';
+  /* ── Phase 2: start video generation ── */
+  const startVideo = async (aJobId: string, durations: Record<number, number>) => {
+    setPhase('video');
+    const textLines = lines.filter((l) => l.type === 'text');
+    const scriptLines = textLines.map((l, idx) => ({
+      index: idx,
+      text: l.text,
+      charName: l.charName,
+      isMe: l.isMe,
+    }));
+
+    try {
+      const res = await fetch('/api/imessage/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioJobId: aJobId, lines: scriptLines, darkMode }),
+      });
+      const d = await res.json() as { videoJobId?: string; error?: string };
+      if (d.error) { setStartError(d.error); return; }
+      if (d.videoJobId) setVideoJobId(d.videoJobId);
+    } catch (e) {
+      setStartError(String(e));
+    }
+  };
+
+  /* ── Phase 2: poll video ── */
+  useEffect(() => {
+    if (!videoJobId) return;
+    const iv = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/imessage/video-progress/${videoJobId}`);
+        const data = await res.json() as { status: string; progress: number; errorMessage?: string };
+        setVideoProgress(data);
+        if (data.status === 'done') {
+          clearInterval(iv);
+          onDone(audioJobId!, videoJobId);
+        }
+        if (data.status === 'error') clearInterval(iv);
+      } catch (_) {}
+    }, 1500);
+    return () => clearInterval(iv);
+  }, [videoJobId]);
+
+  const isErr = audioProgress?.status === 'error' || videoProgress?.status === 'error';
+  const errMsg = videoProgress?.errorMessage ?? '';
+
+  /* Audio progress display */
+  const audioTotal = audioProgress?.total ?? lines.filter(l => l.type === 'text').length;
+  const audioDone  = audioProgress?.completed ?? 0;
+  const audioPct   = audioTotal > 0 ? Math.round((audioDone / audioTotal) * 100) : 0;
+
+  /* Overall progress: audio = 0–50%, video = 50–100% */
+  const overallPct = phase === 'audio' ? Math.round(audioPct * 0.5) : 50 + Math.round((videoProgress?.progress ?? 0) * 0.5);
 
   return (
     <div className="p-8 max-w-md mx-auto space-y-6">
       <div className="text-center space-y-1">
-        <h2 className="text-lg font-semibold text-white">Generating audio</h2>
-        <p className="text-sm text-white/35">Kokoro TTS is synthesising each line with emotion…</p>
+        <h2 className="text-lg font-semibold text-white">
+          {phase === 'audio' ? 'Generating voices…' : 'Rendering video…'}
+        </h2>
+        <p className="text-sm text-white/35">
+          {phase === 'audio'
+            ? 'Google AI is synthesising each line with the selected voice.'
+            : 'ffmpeg is compositing the iMessage animation with synced audio.'}
+        </p>
       </div>
 
       {startError ? (
@@ -838,23 +906,46 @@ function AudioStep({ lines, characters, onDone, onBack }: {
           <p className="text-sm text-red-400">{startError}</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/6 bg-white/3 p-5 space-y-4">
+        <div className="rounded-xl border border-white/6 bg-white/3 p-5 space-y-5">
+          {/* Phase steps */}
+          <div className="flex items-center gap-3">
+            {(['audio', 'video'] as const).map((p, i) => (
+              <div key={p} className="flex items-center gap-2 flex-1">
+                <div className={cn('w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
+                  phase === p ? 'bg-green-500 text-white'
+                    : (p === 'audio' && phase === 'video') ? 'bg-green-500/30 text-green-400'
+                    : 'bg-white/8 text-white/30')}>
+                  {(p === 'audio' && phase === 'video') ? '✓' : i + 1}
+                </div>
+                <span className={cn('text-xs font-medium', phase === p ? 'text-white' : 'text-white/30')}>
+                  {p === 'audio' ? 'Voices' : 'Video'}
+                </span>
+                {i === 0 && <div className="flex-1 h-px bg-white/10" />}
+              </div>
+            ))}
+          </div>
+
+          {/* Progress bar */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-white/40">{isErr ? 'Failed' : !jobId ? 'Starting…' : `Line ${done} of ${total}`}</span>
-              <span className="text-green-400 font-semibold">{pct}%</span>
+              <span className="text-white/40">
+                {phase === 'audio'
+                  ? (!audioJobId ? 'Starting…' : `Line ${audioDone} of ${audioTotal}`)
+                  : (!videoJobId ? 'Starting render…' : `${videoProgress?.progress ?? 0}%`)}
+              </span>
+              <span className="text-green-400 font-semibold">{overallPct}%</span>
             </div>
-            <Progress value={pct} className="h-1" />
+            <Progress value={overallPct} className="h-1.5" />
           </div>
+
           {isErr ? (
             <p className="text-sm text-red-400 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {progress?.errorMessage}
+              <AlertCircle className="h-4 w-4 shrink-0" /> {errMsg || 'Generation failed'}
             </p>
           ) : (
             <p className="text-xs text-white/30 text-center flex items-center justify-center gap-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Each line may take 5–15 seconds on first use
+              {phase === 'audio' ? 'Each line takes a few seconds to synthesise' : 'Building your video, almost there…'}
             </p>
           )}
         </div>
@@ -869,9 +960,12 @@ function AudioStep({ lines, characters, onDone, onBack }: {
 
 /* ─── Step 5: Done ──────────────────────────────────────────────── */
 
-function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
-  const downloadPath = `/api/conversation/download/${jobId}`;
-  const downloadUrl = `${window.location.origin}${downloadPath}`;
+function DoneStep({ audioJobId, videoJobId, onReset }: {
+  audioJobId: string; videoJobId: string; onReset: () => void;
+}) {
+  const videoPath = `/api/imessage/video-download/${videoJobId}`;
+  const audioPath = `/api/imessage/audio-combined/${audioJobId}`;
+  const videoUrl  = `${window.location.origin}${videoPath}`;
 
   return (
     <div className="p-8 max-w-lg mx-auto space-y-6 text-center">
@@ -879,18 +973,20 @@ function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
         <CheckCircle2 className="h-7 w-7 text-green-400" />
       </div>
       <div>
-        <h2 className="text-lg font-semibold text-white">Audio ready!</h2>
-        <p className="text-sm text-white/35 mt-0.5">Your conversation MP3 has been generated.</p>
+        <h2 className="text-lg font-semibold text-white">Video ready!</h2>
+        <p className="text-sm text-white/35 mt-0.5">
+          Your iMessage conversation video is synced and ready to download.
+        </p>
       </div>
 
-      {/* Audio preview player */}
+      {/* Video preview player */}
       <div className="rounded-xl border border-white/8 bg-white/3 p-4 space-y-2">
         <p className="text-[10px] text-white/25 uppercase tracking-wider font-semibold">Preview</p>
-        <audio
+        <video
           controls
-          src={downloadPath}
-          className="w-full h-10 [&::-webkit-media-controls-panel]:bg-transparent [&::-webkit-media-controls-current-time-display]:text-white/60 [&::-webkit-media-controls-time-remaining-display]:text-white/60"
-          style={{ colorScheme: 'dark' }}
+          src={videoPath}
+          className="w-full rounded-lg max-h-[360px] object-contain bg-black"
+          playsInline
         />
       </div>
 
@@ -902,16 +998,20 @@ function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
         </div>
         <div className="flex justify-center">
           <div className="p-2 bg-white rounded-xl">
-            <QRCodeSVG value={downloadUrl} size={160} level="M" />
+            <QRCodeSVG value={videoUrl} size={160} level="M" />
           </div>
         </div>
         <p className="text-[10px] text-white/20">Point your phone camera at the QR code</p>
       </div>
 
       <div className="flex flex-col gap-3">
-        <a href={downloadPath} download
+        <a href={videoPath} download
           className="flex items-center justify-center gap-2 h-10 px-5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
-          <Download className="h-4 w-4" /> Download MP3
+          <Download className="h-4 w-4" /> Download MP4 (Video)
+        </a>
+        <a href={audioPath} download
+          className="flex items-center justify-center gap-2 h-10 px-5 bg-white/8 hover:bg-white/12 text-white/70 text-sm font-medium rounded-lg transition-colors border border-white/10">
+          <Download className="h-4 w-4" /> Download MP3 (Audio only)
         </a>
         <Button variant="ghost" onClick={onReset} className="text-white/35 hover:text-white h-9 text-sm">
           Create another
@@ -931,7 +1031,9 @@ export function TextAutomation() {
   ]);
   const [scriptText, setScriptText]   = useState('');
   const [parsedLines, setParsedLines] = useState<ParsedLine[]>([]);
+  const [darkMode, setDarkMode]       = useState(true);
   const [audioJobId, setAudioJobId]   = useState<string | null>(null);
+  const [videoJobId, setVideoJobId]   = useState<string | null>(null);
 
   const reset = () => {
     setStep('setup');
@@ -939,7 +1041,7 @@ export function TextAutomation() {
       { id: uid(), name: 'You', voice: 'Aoede', isMe: true  },
       { id: uid(), name: '',    voice: 'Puck',  isMe: false },
     ]);
-    setScriptText(''); setParsedLines([]); setAudioJobId(null);
+    setScriptText(''); setParsedLines([]); setAudioJobId(null); setVideoJobId(null);
   };
 
   return (
@@ -956,13 +1058,18 @@ export function TextAutomation() {
         )}
         {step === 'preview' && (
           <PreviewStep characters={characters} lines={parsedLines}
-            onLinesChange={setParsedLines} onGenerate={() => setStep('audio')} onBack={() => setStep('script')} />
+            onLinesChange={setParsedLines}
+            onGenerate={(dm: boolean) => { setDarkMode(dm); setStep('audio'); }}
+            onBack={() => setStep('script')} />
         )}
         {step === 'audio' && (
-          <AudioStep lines={parsedLines} characters={characters}
-            onDone={(jid) => { setAudioJobId(jid); setStep('done'); }} onBack={() => setStep('preview')} />
+          <AudioStep lines={parsedLines} characters={characters} darkMode={darkMode}
+            onDone={(aId, vId) => { setAudioJobId(aId); setVideoJobId(vId); setStep('done'); }}
+            onBack={() => setStep('preview')} />
         )}
-        {step === 'done' && audioJobId && <DoneStep jobId={audioJobId} onReset={reset} />}
+        {step === 'done' && audioJobId && videoJobId && (
+          <DoneStep audioJobId={audioJobId} videoJobId={videoJobId} onReset={reset} />
+        )}
       </div>
     </div>
   );
