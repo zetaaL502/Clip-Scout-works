@@ -1,15 +1,15 @@
 import { Router } from "express";
-import { KOKORO_VOICES } from "../../utils/kokoroTTS";
+import { GEMINI_VOICES } from "../../utils/geminiTTS";
 
 const router = Router();
 
 router.get("/imessage/voices", (_req, res): void => {
   res.json({
-    voices: KOKORO_VOICES.map((v) => ({
+    voices: GEMINI_VOICES.map((v) => ({
       shortName: v.id,
-      name: `${v.label} (${v.accent})`,
+      name: `${v.label} (${v.style})`,
       gender: v.gender,
-      locale: v.accent === "American" ? "en-US" : "en-GB",
+      locale: "en-US",
     })),
   });
 });

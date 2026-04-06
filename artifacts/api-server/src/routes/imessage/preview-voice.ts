@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger";
-import { generateAudio } from "../../utils/kokoroTTS";
+import { generateAudio } from "../../utils/geminiTTS";
 
 const router = Router();
 

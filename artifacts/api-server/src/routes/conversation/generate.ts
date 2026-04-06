@@ -4,7 +4,7 @@ import fs from "fs";
 import { randomUUID } from "node:crypto";
 import { spawn } from "child_process";
 import { logger } from "../../lib/logger";
-import { generateAudio } from "../../utils/kokoroTTS";
+import { generateAudio } from "../../utils/geminiTTS";
 
 const router = Router();
 
@@ -65,7 +65,7 @@ async function processConvJob(job: ConvJob, lines: ConvLine[]): Promise<void> {
 
   if (lineMp3s.length === 0) {
     job.status = "error";
-    job.errorMessage = "No audio was generated. Check that HUGGINGFACE_API_KEY is set and the Kokoro model is reachable.";
+    job.errorMessage = "No audio was generated. Check that GEMINI_API_KEY is set and the Gemini TTS model is reachable.";
     return;
   }
 
@@ -84,8 +84,8 @@ async function processConvJob(job: ConvJob, lines: ConvLine[]): Promise<void> {
 }
 
 router.post("/conversation/generate", async (req, res): Promise<void> => {
-  if (!process.env.HUGGINGFACE_API_KEY) {
-    res.status(500).json({ error: "HUGGINGFACE_API_KEY is not configured on the server." });
+  if (!process.env.GEMINI_API_KEY) {
+    res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
     return;
   }
 

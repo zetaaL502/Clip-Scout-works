@@ -16,21 +16,30 @@ import { QRCodeSVG } from 'qrcode.react';
 
 /* ─── Constants ─────────────────────────────────────────────────────── */
 
-const KOKORO_VOICES = [
-  { id: 'af_heart',    label: 'Heart',    accent: 'American', gender: 'Female' },
-  { id: 'af_bella',    label: 'Bella',    accent: 'American', gender: 'Female' },
-  { id: 'af_sarah',    label: 'Sarah',    accent: 'American', gender: 'Female' },
-  { id: 'af_sky',      label: 'Sky',      accent: 'American', gender: 'Female' },
-  { id: 'af_nicole',   label: 'Nicole',   accent: 'American', gender: 'Female' },
-  { id: 'am_adam',     label: 'Adam',     accent: 'American', gender: 'Male'   },
-  { id: 'am_michael',  label: 'Michael',  accent: 'American', gender: 'Male'   },
-  { id: 'bf_emma',     label: 'Emma',     accent: 'British',  gender: 'Female' },
-  { id: 'bf_isabella', label: 'Isabella', accent: 'British',  gender: 'Female' },
-  { id: 'bm_george',   label: 'George',   accent: 'British',  gender: 'Male'   },
-  { id: 'bm_lewis',    label: 'Lewis',    accent: 'British',  gender: 'Male'   },
+const GEMINI_VOICES = [
+  { id: 'Aoede',         label: 'Aoede',         style: 'Breezy',       gender: 'Female' },
+  { id: 'Leda',          label: 'Leda',          style: 'Youthful',     gender: 'Female' },
+  { id: 'Zephyr',        label: 'Zephyr',        style: 'Bright',       gender: 'Female' },
+  { id: 'Callisto',      label: 'Callisto',      style: 'Clear',        gender: 'Female' },
+  { id: 'Kore',          label: 'Kore',          style: 'Firm',         gender: 'Female' },
+  { id: 'Achernar',      label: 'Achernar',      style: 'Soft',         gender: 'Female' },
+  { id: 'Vindemiatrix',  label: 'Vindemiatrix',  style: 'Gentle',       gender: 'Female' },
+  { id: 'Pulcherrima',   label: 'Pulcherrima',   style: 'Forward',      gender: 'Female' },
+  { id: 'Sadachbia',     label: 'Sadachbia',     style: 'Lively',       gender: 'Female' },
+  { id: 'Sulafat',       label: 'Sulafat',       style: 'Warm',         gender: 'Female' },
+  { id: 'Puck',          label: 'Puck',          style: 'Upbeat',       gender: 'Male'   },
+  { id: 'Charon',        label: 'Charon',        style: 'Informative',  gender: 'Male'   },
+  { id: 'Fenrir',        label: 'Fenrir',        style: 'Excitable',    gender: 'Male'   },
+  { id: 'Orus',          label: 'Orus',          style: 'Firm',         gender: 'Male'   },
+  { id: 'Algieba',       label: 'Algieba',       style: 'Smooth',       gender: 'Male'   },
+  { id: 'Alnilam',       label: 'Alnilam',       style: 'Firm',         gender: 'Male'   },
+  { id: 'Gacrux',        label: 'Gacrux',        style: 'Mature',       gender: 'Male'   },
+  { id: 'Achird',        label: 'Achird',        style: 'Friendly',     gender: 'Male'   },
+  { id: 'Sadaltager',    label: 'Sadaltager',    style: 'Knowledgeable',gender: 'Male'   },
+  { id: 'Zubenelgenubi', label: 'Zubenelgenubi', style: 'Casual',       gender: 'Male'   },
 ] as const;
 
-type KokoroVoiceId = typeof KOKORO_VOICES[number]['id'];
+type GeminiVoiceId = typeof GEMINI_VOICES[number]['id'];
 
 /* ─── Types ─────────────────────────────────────────────────────────── */
 
@@ -39,7 +48,7 @@ type Step = 'setup' | 'script' | 'preview' | 'audio' | 'done';
 interface Character {
   id: string;
   name: string;
-  voice: KokoroVoiceId;
+  voice: GeminiVoiceId;
   isMe: boolean;
 }
 
@@ -183,14 +192,14 @@ function VoiceSelector({ value, onChange, characterName }: {
 
   return (
     <div className="flex items-center gap-1.5">
-      <Select value={value} onValueChange={(v) => onChange(v as KokoroVoiceId)}>
+      <Select value={value} onValueChange={(v) => onChange(v as GeminiVoiceId)}>
         <SelectTrigger className="w-40 h-8 text-xs bg-white/5 border-white/10 text-white">
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="bg-[#1a1a1a] border-white/10 max-h-52">
-          {KOKORO_VOICES.map((v) => (
+          {GEMINI_VOICES.map((v) => (
             <SelectItem key={v.id} value={v.id} className="text-xs text-white/80 hover:text-white">
-              {v.label} <span className="text-white/35 ml-1">({v.accent[0]}, {v.gender[0]})</span>
+              {v.label} <span className="text-white/35 ml-1">({v.style}, {v.gender[0]})</span>
             </SelectItem>
           ))}
         </SelectContent>
@@ -246,7 +255,7 @@ function SetupStep({ characters, onChange, onNext }: {
     <div className="p-8 max-w-xl mx-auto space-y-8">
       <div>
         <h2 className="text-lg font-semibold text-white">Set up your cast</h2>
-        <p className="text-sm text-white/35 mt-0.5">Give each person a name and pick their Kokoro voice.</p>
+        <p className="text-sm text-white/35 mt-0.5">Give each person a name and pick their Google AI voice.</p>
       </div>
 
       {/* You */}
@@ -281,7 +290,7 @@ function SetupStep({ characters, onChange, onNext }: {
             </div>
           ))}
         </div>
-        <button onClick={() => onChange([...characters, { id: uid(), name: '', voice: 'am_adam', isMe: false }])}
+        <button onClick={() => onChange([...characters, { id: uid(), name: '', voice: 'Puck', isMe: false }])}
           className="flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors mt-1">
           <div className="w-6 h-6 rounded-full border border-dashed border-white/15 flex items-center justify-center">
             <Plus className="h-3 w-3" />
@@ -404,7 +413,7 @@ function ScriptStep({ characters, initialScript, onParsed, onBack }: {
         {characters.map((c) => (
           <span key={c.id} className={cn('px-2 py-0.5 rounded-full text-[11px] font-medium',
             c.isMe ? 'bg-green-500/15 text-green-300' : 'bg-white/8 text-white/50')}>
-            {c.name || '(unnamed)'} · {KOKORO_VOICES.find(v => v.id === c.voice)?.label ?? c.voice}
+            {c.name || '(unnamed)'} · {GEMINI_VOICES.find(v => v.id === c.voice)?.label ?? c.voice}
           </span>
         ))}
       </div>
@@ -784,7 +793,7 @@ function AudioStep({ lines, characters, onDone, onBack }: {
     started.current = true;
     const payload = lines.filter((l) => l.type === 'text').map((l) => {
       const char = characters.find((c) => c.id === l.charId);
-      return { text: l.text, voice: char?.voice ?? 'af_heart', type: 'text' as const };
+      return { text: l.text, voice: char?.voice ?? 'Aoede', type: 'text' as const };
     });
     fetch('/api/conversation/generate', {
       method: 'POST',
@@ -917,8 +926,8 @@ function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
 export function TextAutomation() {
   const [step, setStep]               = useState<Step>('setup');
   const [characters, setCharacters]   = useState<Character[]>([
-    { id: uid(), name: 'You', voice: 'af_heart', isMe: true  },
-    { id: uid(), name: '',    voice: 'am_adam',  isMe: false },
+    { id: uid(), name: 'You', voice: 'Aoede', isMe: true  },
+    { id: uid(), name: '',    voice: 'Puck',  isMe: false },
   ]);
   const [scriptText, setScriptText]   = useState('');
   const [parsedLines, setParsedLines] = useState<ParsedLine[]>([]);
@@ -927,8 +936,8 @@ export function TextAutomation() {
   const reset = () => {
     setStep('setup');
     setCharacters([
-      { id: uid(), name: 'You', voice: 'af_heart', isMe: true  },
-      { id: uid(), name: '',    voice: 'am_adam',  isMe: false },
+      { id: uid(), name: 'You', voice: 'Aoede', isMe: true  },
+      { id: uid(), name: '',    voice: 'Puck',  isMe: false },
     ]);
     setScriptText(''); setParsedLines([]); setAudioJobId(null);
   };

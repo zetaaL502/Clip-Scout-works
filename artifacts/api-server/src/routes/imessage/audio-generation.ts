@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/logger";
-import { generateAudio } from "../../utils/kokoroTTS";
+import { generateAudio } from "../../utils/geminiTTS";
 import { spawn } from "child_process";
 
 const router = Router();
