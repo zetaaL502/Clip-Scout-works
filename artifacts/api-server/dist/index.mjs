@@ -85501,6 +85501,9 @@ function detectSpeed(text) {
   if (hasEllipsis || sadWords) return 0.9;
   return 1;
 }
+function stripEmoji(text) {
+  return text.replace(/\p{Emoji}/gu, "").replace(/\u200D/gu, "").replace(/[\uFE0E\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
+}
 function chunkText(text) {
   const trimmed = text.trim();
   if (trimmed.length <= CHUNK_SIZE) return [trimmed];
@@ -85654,7 +85657,12 @@ function generateGTTSAudio(text, voice, outputMp3Path) {
   });
 }
 var kokoroUnavailable = false;
-async function generateAudio(text, voice, outputMp3Path) {
+async function generateAudio(rawText, voice, outputMp3Path) {
+  const text = stripEmoji(rawText);
+  if (!text) {
+    logger.warn({ rawText }, "Text was empty after emoji strip, skipping line");
+    throw new Error("Empty text after emoji strip");
+  }
   if (!kokoroUnavailable) {
     try {
       await generateKokoroAudio(text, voice, outputMp3Path);
