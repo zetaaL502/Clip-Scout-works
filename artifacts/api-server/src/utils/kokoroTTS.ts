@@ -70,6 +70,16 @@ function detectSpeed(text: string): number {
   return 1.0;
 }
 
+/** Strip emoji and special Unicode characters before TTS to prevent garbled output */
+function stripEmoji(text: string): string {
+  return text
+    .replace(/\p{Emoji}/gu, '')
+    .replace(/\u200D/gu, '')
+    .replace(/[\uFE0E\uFE0F]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function chunkText(text: string): string[] {
   const trimmed = text.trim();
   if (trimmed.length <= CHUNK_SIZE) return [trimmed];
@@ -225,7 +235,13 @@ function generateGTTSAudio(text: string, voice: string, outputMp3Path: string): 
 
 let kokoroUnavailable = false;
 
-export async function generateAudio(text: string, voice: string, outputMp3Path: string): Promise<void> {
+export async function generateAudio(rawText: string, voice: string, outputMp3Path: string): Promise<void> {
+  const text = stripEmoji(rawText);
+  if (!text) {
+    // If stripping leaves nothing (e.g. pure emoji message), write silence
+    logger.warn({ rawText }, "Text was empty after emoji strip, skipping line");
+    throw new Error("Empty text after emoji strip");
+  }
   if (!kokoroUnavailable) {
     try {
       await generateKokoroAudio(text, voice, outputMp3Path);

@@ -10,8 +10,9 @@ import {
   Plus, Trash2, ChevronRight, ArrowLeft, Download,
   Loader2, Play, Pause, Upload, CheckCircle2,
   Image as ImageIcon, Video as VideoIcon, AlertCircle, Mic,
-  Sun, Moon, Volume2, VolumeX,
+  Sun, Moon, Volume2, VolumeX, Smartphone,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 /* ─── Constants ─────────────────────────────────────────────────────── */
 
@@ -49,6 +50,7 @@ interface ParsedLine {
   isMe: boolean;
   type: 'text' | 'image' | 'video';
   text: string;
+  mediaSlotId?: string;
   mediaFile?: File;
   mediaUrl?: string;
   mediaServerId?: string;
@@ -84,8 +86,17 @@ function parseScript(raw: string, chars: Character[]): { lines: ParsedLine[]; er
     if (!char) return { lines: [], error: `Character "${charName}" not found — add them first.` };
     if (!text) return { lines: [], error: `Line ${i + 1}: empty message for ${charName}.` };
     const lower = text.toLowerCase();
-    const type: 'text' | 'image' | 'video' = lower === '[image]' ? 'image' : lower === '[video]' ? 'video' : 'text';
-    lines.push({ id: uid(), charId: char.id, charName: char.name, isMe: char.isMe, type, text: type === 'text' ? text : '' });
+    const imgIdMatch = /^\[img:([^\]]+)\]$/i.exec(text);
+    const vidIdMatch = /^\[vid:([^\]]+)\]$/i.exec(text);
+    const type: 'text' | 'image' | 'video' =
+      lower === '[image]' || imgIdMatch ? 'image' :
+      lower === '[video]' || vidIdMatch ? 'video' : 'text';
+    const slotId = imgIdMatch?.[1] ?? vidIdMatch?.[1];
+    lines.push({
+      id: uid(), charId: char.id, charName: char.name, isMe: char.isMe,
+      type, text: type === 'text' ? text : '',
+      ...(slotId ? { mediaSlotId: slotId } : {}),
+    });
   }
   return { lines, error: null };
 }
@@ -96,18 +107,21 @@ function useVoicePreview() {
   const [previewing, setPreviewing] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const preview = useCallback(async (voice: string) => {
+  const preview = useCallback(async (voice: string, characterName?: string) => {
     if (previewing === voice) {
       audioRef.current?.pause();
       setPreviewing(null);
       return;
     }
     setPreviewing(voice);
+    const previewText = characterName
+      ? `Hey, my name is ${characterName}. This is how I sound!`
+      : 'Hey, this is how I sound when I speak.';
     try {
       const res = await fetch('/api/imessage/preview-voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voice, text: 'Hey, this is how I sound when I speak.' }),
+        body: JSON.stringify({ voice, text: previewText }),
       });
       if (!res.ok) throw new Error('Preview failed');
       const blob = await res.blob();
@@ -161,7 +175,9 @@ function StepBar({ current }: { current: Step }) {
 
 /* ─── VoiceSelector ─────────────────────────────────────────────── */
 
-function VoiceSelector({ value, onChange }: { value: string; onChange: (v: KokoroVoiceId) => void }) {
+function VoiceSelector({ value, onChange, characterName }: {
+  value: string; onChange: (v: KokoroVoiceId) => void; characterName?: string;
+}) {
   const { previewing, preview } = useVoicePreview();
   const isPreviewing = previewing === value;
 
@@ -180,7 +196,7 @@ function VoiceSelector({ value, onChange }: { value: string; onChange: (v: Kokor
         </SelectContent>
       </Select>
       <button
-        onClick={() => preview(value)}
+        onClick={() => preview(value, characterName)}
         title={isPreviewing ? 'Stop preview' : 'Preview voice'}
         className={cn(
           'w-8 h-8 rounded-lg flex items-center justify-center transition-all shrink-0',
@@ -241,7 +257,7 @@ function SetupStep({ characters, onChange, onNext }: {
           <Input value={me.name} onChange={(e) => { update(me.id, { name: e.target.value }); setErr(''); }}
             placeholder="Your name (e.g. Maria)"
             className="flex-1 bg-white/4 border-white/8 text-white placeholder:text-white/20 h-8 text-sm" />
-          <VoiceSelector value={me.voice} onChange={(v) => update(me.id, { voice: v })} />
+          <VoiceSelector value={me.voice} onChange={(v) => update(me.id, { voice: v })} characterName={me.name} />
         </div>
       </div>
 
@@ -255,7 +271,7 @@ function SetupStep({ characters, onChange, onNext }: {
               <Input value={char.name} onChange={(e) => { update(char.id, { name: e.target.value }); setErr(''); }}
                 placeholder={i === 0 ? 'Contact name (e.g. Kaleb)' : 'Character name'}
                 className="flex-1 bg-white/4 border-white/8 text-white placeholder:text-white/20 h-8 text-sm" />
-              <VoiceSelector value={char.voice} onChange={(v) => update(char.id, { voice: v })} />
+              <VoiceSelector value={char.voice} onChange={(v) => update(char.id, { voice: v })} characterName={char.name} />
               {them.length > 1 && (
                 <button onClick={() => onChange(characters.filter((c) => c.id !== char.id))}
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-white/25 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0">
@@ -287,6 +303,8 @@ function SetupStep({ characters, onChange, onNext }: {
 
 /* ─── Step 2: Script ─────────────────────────────────────────────── */
 
+type ScriptMedia = Record<string, { file: File; url: string; type: 'image' | 'video' }>;
+
 function ScriptStep({ characters, initialScript, onParsed, onBack }: {
   characters: Character[]; initialScript: string;
   onParsed: (lines: ParsedLine[], script: string) => void; onBack: () => void;
@@ -294,6 +312,10 @@ function ScriptStep({ characters, initialScript, onParsed, onBack }: {
   const [text, setText] = useState(initialScript);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ParsedLine[]>([]);
+  const [mediaMap, setMediaMap] = useState<ScriptMedia>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingSlotId = useRef<string | null>(null);
+  const pendingSlotType = useRef<'image' | 'video' | null>(null);
   const me = characters.find((c) => c.isMe);
   const contact = characters.find((c) => !c.isMe);
 
@@ -303,11 +325,68 @@ function ScriptStep({ characters, initialScript, onParsed, onBack }: {
     if (err) { setError(err); setPreview([]); } else { setError(null); setPreview(lines); }
   }, [text, characters]);
 
+  const handleTextChange = (newVal: string) => {
+    const hadImage = /\[image\]/i.test(text);
+    const hasImage = /\[image\]/i.test(newVal);
+    if (hasImage && !hadImage) {
+      const slotId = uid();
+      const replaced = newVal.replace(/\[image\]/i, `[img:${slotId}]`);
+      setText(replaced);
+      pendingSlotId.current = slotId;
+      pendingSlotType.current = 'image';
+      if (fileInputRef.current) {
+        fileInputRef.current.accept = 'image/*';
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+      }
+      return;
+    }
+    const hadVideo = /\[video\]/i.test(text);
+    const hasVideo = /\[video\]/i.test(newVal);
+    if (hasVideo && !hadVideo) {
+      const slotId = uid();
+      const replaced = newVal.replace(/\[video\]/i, `[vid:${slotId}]`);
+      setText(replaced);
+      pendingSlotId.current = slotId;
+      pendingSlotType.current = 'video';
+      if (fileInputRef.current) {
+        fileInputRef.current.accept = 'video/*';
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+      }
+      return;
+    }
+    setText(newVal);
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const slotId = pendingSlotId.current;
+    const slotType = pendingSlotType.current;
+    if (!file || !slotId || !slotType) return;
+    const url = URL.createObjectURL(file);
+    setMediaMap(prev => ({ ...prev, [slotId]: { file, url, type: slotType } }));
+    pendingSlotId.current = null;
+    pendingSlotType.current = null;
+  };
+
+  const removeMedia = (slotId: string) => {
+    setMediaMap(prev => { const next = { ...prev }; URL.revokeObjectURL(next[slotId]?.url ?? ''); delete next[slotId]; return next; });
+    setText(prev => prev.replace(`[img:${slotId}]`, '').replace(`[vid:${slotId}]`, ''));
+  };
+
   const handleProcess = () => {
     const { lines, error: err } = parseScript(text, characters);
     if (err) { setError(err); return; }
     if (!lines.length) { setError('Script is empty.'); return; }
-    onParsed(lines, text);
+    const linesWithMedia = lines.map(line => {
+      if (line.mediaSlotId && mediaMap[line.mediaSlotId]) {
+        const { file, url } = mediaMap[line.mediaSlotId];
+        return { ...line, mediaFile: file, mediaUrl: url };
+      }
+      return line;
+    });
+    onParsed(linesWithMedia, text);
   };
 
   return (
@@ -316,8 +395,8 @@ function ScriptStep({ characters, initialScript, onParsed, onBack }: {
         <h2 className="text-lg font-semibold text-white">Write the script</h2>
         <p className="text-sm text-white/35 mt-0.5">
           Format: <code className="text-green-400 text-xs bg-green-500/10 px-1 rounded">Name: message</code>
-          {' '}— use <code className="text-blue-400 text-xs bg-blue-500/10 px-1 rounded">[image]</code> or{' '}
-          <code className="text-blue-400 text-xs bg-blue-500/10 px-1 rounded">[video]</code> for media slots.
+          {' '}— type <code className="text-blue-400 text-xs bg-blue-500/10 px-1 rounded">[image]</code> or{' '}
+          <code className="text-blue-400 text-xs bg-blue-500/10 px-1 rounded">[video]</code> to instantly attach media.
         </p>
       </div>
 
@@ -325,17 +404,42 @@ function ScriptStep({ characters, initialScript, onParsed, onBack }: {
         {characters.map((c) => (
           <span key={c.id} className={cn('px-2 py-0.5 rounded-full text-[11px] font-medium',
             c.isMe ? 'bg-green-500/15 text-green-300' : 'bg-white/8 text-white/50')}>
-            {c.name || '(unnamed)'} · {KOKORO_VOICES.find(v => v.id === c.voice)?.label}
+            {c.name || '(unnamed)'} · {KOKORO_VOICES.find(v => v.id === c.voice)?.label ?? c.voice}
           </span>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         <div className="lg:col-span-3 space-y-3">
-          <Textarea value={text} onChange={(e) => setText(e.target.value)}
+          <Textarea value={text} onChange={(e) => handleTextChange(e.target.value)}
             placeholder={`${me?.name || 'You'}: hey you free later?\n${contact?.name || 'Kaleb'}: yeah why whats up\n${me?.name || 'You'}: [image]\n${contact?.name || 'Kaleb'}: [video]`}
             className="min-h-[300px] bg-white/3 border-white/8 text-white font-mono text-sm resize-none leading-relaxed focus:border-green-500/40 focus:ring-0"
             spellCheck={false} />
+
+          {/* Hidden file input — triggered when user types [image] or [video] */}
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
+
+          {/* Attached media thumbnails */}
+          {Object.keys(mediaMap).length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-white/25 uppercase tracking-wider font-semibold">Attached media</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(mediaMap).map(([slotId, { url, type, file }]) => (
+                  <div key={slotId} className="relative group">
+                    {type === 'image'
+                      ? <img src={url} alt={file.name} className="w-16 h-16 rounded-lg object-cover border border-white/10" />
+                      : <video src={url} className="w-16 h-16 rounded-lg object-cover border border-white/10" muted />}
+                    <button
+                      onClick={() => removeMedia(slotId)}
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >×</button>
+                    <p className="text-[8px] text-white/30 mt-0.5 text-center truncate max-w-[64px]">{file.name.slice(0, 12)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {error && <p className="flex items-center gap-1.5 text-red-400 text-xs"><AlertCircle className="h-3.5 w-3.5 shrink-0" />{error}</p>}
           <Button onClick={handleProcess} disabled={!text.trim() || !!error} className="bg-green-600 hover:bg-green-700 h-9 text-sm w-full">
             Process Script →
@@ -357,8 +461,16 @@ function ScriptStep({ characters, initialScript, onParsed, onBack }: {
                       {!line.isMe && <p className="text-[9px] text-white/30 mb-0.5 ml-1">{line.charName}</p>}
                       <div className={cn('px-2.5 py-1.5 rounded-xl text-[11px] leading-snug',
                         line.isMe ? 'bg-[#34c759] text-white rounded-br-none' : 'bg-white/10 text-white/75 rounded-bl-none')}>
-                        {line.type === 'image' && <span className="flex items-center gap-1 opacity-60"><ImageIcon className="h-3 w-3" /> image</span>}
-                        {line.type === 'video' && <span className="flex items-center gap-1 opacity-60"><VideoIcon className="h-3 w-3" /> video</span>}
+                        {line.type === 'image' && (
+                          line.mediaSlotId && mediaMap[line.mediaSlotId]
+                            ? <img src={mediaMap[line.mediaSlotId].url} alt="img" className="rounded max-w-full max-h-16 object-cover" />
+                            : <span className="flex items-center gap-1 opacity-60"><ImageIcon className="h-3 w-3" /> image</span>
+                        )}
+                        {line.type === 'video' && (
+                          line.mediaSlotId && mediaMap[line.mediaSlotId]
+                            ? <video src={mediaMap[line.mediaSlotId].url} className="rounded max-w-full max-h-16 object-cover" muted />
+                            : <span className="flex items-center gap-1 opacity-60"><VideoIcon className="h-3 w-3" /> video</span>
+                        )}
                         {line.type === 'text' && line.text}
                       </div>
                     </div>
@@ -749,8 +861,11 @@ function AudioStep({ lines, characters, onDone, onBack }: {
 /* ─── Step 5: Done ──────────────────────────────────────────────── */
 
 function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
+  const downloadPath = `/api/conversation/download/${jobId}`;
+  const downloadUrl = `${window.location.origin}${downloadPath}`;
+
   return (
-    <div className="p-8 max-w-md mx-auto space-y-6 text-center">
+    <div className="p-8 max-w-lg mx-auto space-y-6 text-center">
       <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center mx-auto">
         <CheckCircle2 className="h-7 w-7 text-green-400" />
       </div>
@@ -758,8 +873,34 @@ function DoneStep({ jobId, onReset }: { jobId: string; onReset: () => void }) {
         <h2 className="text-lg font-semibold text-white">Audio ready!</h2>
         <p className="text-sm text-white/35 mt-0.5">Your conversation MP3 has been generated.</p>
       </div>
+
+      {/* Audio preview player */}
+      <div className="rounded-xl border border-white/8 bg-white/3 p-4 space-y-2">
+        <p className="text-[10px] text-white/25 uppercase tracking-wider font-semibold">Preview</p>
+        <audio
+          controls
+          src={downloadPath}
+          className="w-full h-10 [&::-webkit-media-controls-panel]:bg-transparent [&::-webkit-media-controls-current-time-display]:text-white/60 [&::-webkit-media-controls-time-remaining-display]:text-white/60"
+          style={{ colorScheme: 'dark' }}
+        />
+      </div>
+
+      {/* QR code for mobile download */}
+      <div className="rounded-xl border border-white/8 bg-white/3 p-5 space-y-3">
+        <div className="flex items-center justify-center gap-2">
+          <Smartphone className="h-3.5 w-3.5 text-white/30" />
+          <p className="text-[10px] text-white/30 uppercase tracking-wider font-semibold">Scan to download on mobile</p>
+        </div>
+        <div className="flex justify-center">
+          <div className="p-2 bg-white rounded-xl">
+            <QRCodeSVG value={downloadUrl} size={160} level="M" />
+          </div>
+        </div>
+        <p className="text-[10px] text-white/20">Point your phone camera at the QR code</p>
+      </div>
+
       <div className="flex flex-col gap-3">
-        <a href={`/api/conversation/download/${jobId}`} download
+        <a href={downloadPath} download
           className="flex items-center justify-center gap-2 h-10 px-5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
           <Download className="h-4 w-4" /> Download MP3
         </a>

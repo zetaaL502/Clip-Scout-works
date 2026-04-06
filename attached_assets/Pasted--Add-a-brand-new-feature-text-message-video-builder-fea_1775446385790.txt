@@ -1,0 +1,239 @@
+"Add a brand new feature text message video builder feature to my existing app. This is a COMPLETELY NEW feature. DO NOT touch, modify, or break ANY existing code, routes, or components. Add everything in new separate files only.
+
+**OVERVIEW:**
+A 5 page wizard that builds an iMessage style conversation video with synced audio using Google AI Studio TTS API. User can navigate back and forth between all pages without ANY data being lost. All page data persists in React state at the top level component until user manually resets.
+
+**TECHNICAL STACK:**
+- Frontend: React + Tailwind
+- Backend: Express
+- TTS: Google AI Studio API
+- Video export: FFmpeg
+- New component file: ConversationBuilder.jsx
+- New backend routes file: routes/conversation.js
+- All routes prefixed with /api/conversation
+- Add Google AI Studio API key to .env as GOOGLE_AI_STUDIO_KEY
+- Add ConversationBuilder to left sidebar as 'Conversation Builder'
+
+---
+
+**PAGE 1 - CHARACTER SETUP:**
+
+UI:
+- Clean minimal header saying 'Step 1: Setup Characters'
+- Step indicator showing 1-2-3-4-5 at top with current step highlighted
+- Add Character button with plus icon
+- Each character card has:
+  - Name input field
+  - Auto generates initials circle with random soft color per character example Maria = M in purple circle
+  - Voice dropdown with ALL these hardcoded Google AI Studio voices:
+    Aoede, Puck, Charon, Kore, Fenrir, Leda, Orus, Zephyr, Achernar, Despina, Erinome, Gacrux, Isonoe, Laomedeia, Pulcherrima, Rasalgethi, Sadachbia, Sadaltager, Schedar, Sulafar, Umbriel, Algieba, Algenib, Alnilam, Aoede, Callirrhoe, Diphda, Elara, Zubenelgenubi
+  - Preview Voice button per character:
+    - When clicked sends 'Hello my name is [character name], how are you today?' to Google AI Studio TTS with that voice
+    - Plays audio preview directly in browser
+    - Show loading spinner while generating
+  - Delete button per character
+  - First character added = YOU = green bubbles right side
+  - All other characters = THEM = gray bubbles left side
+- Next button at bottom goes to Page 2
+- Validate at least 2 characters added before allowing next
+
+---
+
+**PAGE 2 - SCRIPT INPUT:**
+
+UI:
+- Header 'Step 2: Write Your Script'
+- Step indicator with step 2 highlighted
+- Back button goes to Page 1 WITH all character data still intact
+- Large textarea minimum 400px height full width
+- Placeholder text:
+'Write your script here. Example:
+
+Maria: hey are you okay? 😭
+William: yes I am home ❤️
+Maria: [image]
+William: [video]
+Maria: thank god you are safe'
+
+- Character name before colon must match exactly a character added in Page 1
+- Show small character color dots at top as reminder of added characters
+
+**INLINE MEDIA HANDLING - CRITICAL FEATURE:**
+- When user TYPES the exact text [image] anywhere in textarea:
+  - INSTANTLY trigger file picker dialog
+  - Accept image files only: jpg jpeg png gif webp
+  - After user selects file:
+    - Replace [image] tag with [filename.jpg] in textarea
+    - Show small thumbnail preview inline below that line in textarea
+    - Store the actual file object mapped to that filename
+  - If user cancels file picker: remove [image] tag completely
+- When user TYPES the exact text [video] anywhere in textarea:
+  - INSTANTLY trigger file picker dialog
+  - Accept video files only: mp4 mov avi webm
+  - After user selects file:
+    - Replace [video] tag with [filename.mp4] in textarea
+    - Show small video thumbnail preview inline below that line
+    - Store the actual file object mapped to that filename
+  - If user cancels file picker: remove [video] tag completely
+- Detect typing [image] or [video] using onChange event watching for these exact strings
+- Next button goes to Page 3
+- Validate script has at least 3 lines before allowing next
+
+---
+
+**PAGE 3 - PREVIEW:**
+
+UI:
+- Header 'Step 3: Preview Conversation'
+- Step indicator with step 3 highlighted
+- Back button goes to Page 2 WITH all script data still intact
+- Centered vertical phone frame:
+  - Realistic phone shape with rounded corners
+  - Black background inside phone
+  - Phone status bar at very top showing: time on left, signal and wifi and battery icons on right
+  - iMessage style header below status bar:
+    - White/light background
+    - Back arrow on left with blue 99+ notification bubble
+    - Character avatar circle centered with initials
+    - Contact name centered and properly positioned directly below avatar
+    - Small > arrow next to name
+    - Thin border bottom separating header from messages
+  - Message bubbles area below header scrollable
+  - Each message bubble:
+    - YOU character: green bubble right side rounded corners
+    - THEM characters: gray bubble left side rounded corners
+    - Small character name above each bubble in tiny text
+    - Subtle timestamp below each bubble
+    - Delivered receipt below last bubble
+    - Typing indicator animation (3 dots) before each bubble appears
+    - Each bubble pops in with subtle scale animation
+  - Image bubbles:
+    - Shows actual uploaded image inside bubble
+    - Rounded corners on image
+    - Subtle pop animation when appears
+    - Camera shutter sound plays when image bubble appears
+  - Video bubbles:
+    - Shows actual video player inside bubble
+    - Plays inline automatically muted
+    - Tap/click to unmute
+    - Play icon overlay in center
+  - Emojis show visually in bubbles exactly as typed ✅
+  - Messages appear one by one with typing indicator between each
+  - Smooth scroll as messages appear
+- Next button goes to Page 4
+- Back button goes to Page 2
+
+---
+
+**PAGE 4 - GENERATE AUDIO:**
+
+UI:
+- Header 'Step 4: Generate'
+- Step indicator with step 4 highlighted
+- Back button goes to Page 3 WITH everything still intact
+- Show summary:
+  - Characters list with their voices
+  - Script line count
+  - Estimated video length
+- Generate button - big prominent
+- When Generate clicked:
+  - Parse script line by line
+  - For each line:
+    - Strip ALL emojis before sending to TTS
+    - Strip image and video tags before sending to TTS
+    - Keep actual dialogue text only
+    - Send to Google AI Studio TTS with that character's assigned voice
+    - Include this system instruction with every TTS request:
+      'Speak with natural human emotion. Match the tone to the context of what is being said. Be dramatic where appropriate. Be sad where appropriate. Be excited where appropriate. Exaggerate emotions slightly for storytelling effect. Do NOT read emojis, brackets, or tags.'
+  - Generate all character lines in parallel not sequential
+  - Show progress bar with percentage
+  - Show which character line is being generated
+  - When all audio generated:
+    - Combine all audio in correct script order using FFmpeg
+    - One final combined MP3 file
+  - Show green success message when done
+  - Preview audio player to listen before downloading
+- Next button appears only when generation complete
+- Goes to Page 5
+
+**BACKEND ROUTES for Page 4:**
+- POST /api/conversation/generate-line
+  - Takes: text, voice, character name
+  - Strips emojis using regex before sending to Google AI Studio
+  - Sends to Google AI Studio TTS API
+  - Returns audio buffer
+- POST /api/conversation/combine-audio
+  - Takes: array of audio buffers in order
+  - Uses FFmpeg to combine into one MP3
+  - Returns final combined MP3
+- Clean up all temp files after combining
+
+---
+
+**PAGE 5 - EXPORT:**
+
+UI:
+- Header 'Step 5: Export'
+- Step indicator with step 5 highlighted
+- Back button goes to Page 4
+- Show final phone frame preview playing with audio synced
+- Export MP4 button:
+  - Combines phone UI visual + combined audio into MP4
+  - Phone frame is vertical 9:16 aspect ratio
+  - Background behind phone frame is dark blurred gradient
+  - Messages appear in sync with audio timing
+  - When MP4 ready:
+    - Show QR code that when scanned downloads the MP4 directly to phone
+    - Also show regular Download MP4 button for desktop
+    - Show file size
+- Start Over button that resets ALL data and goes back to Page 1
+
+---
+
+**DATA PERSISTENCE - CRITICAL:**
+- Store ALL wizard data in single React state object at top of ConversationBuilder.jsx:
+```
+{
+  characters: [],
+  script: '',
+  mediaFiles: {},
+  generatedAudio: null,
+  currentPage: 1
+}
+```
+- NEVER reset this state when navigating between pages
+- Only reset when user clicks Start Over on Page 5
+- Pass state and setState down to all page components as props
+- Going back never loses any data ever
+
+---
+
+**EMOJI HANDLING:**
+- Show emojis visually in ALL preview bubbles ✅
+- Strip emojis before sending ANY text to Google AI Studio TTS API
+- Use this regex to strip emojis:
+```
+text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+```
+- After stripping emojis also strip any leftover image or video tags like [filename.jpg] or [filename.mp4]
+
+---
+
+**GOOGLE AI STUDIO TTS INTEGRATION:**
+- API key stored in .env as GOOGLE_AI_STUDIO_KEY
+- Use Gemini 2.5 Flash TTS model
+- Endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+- Every request includes emotion instruction
+- Handle rate limits gracefully: if rate limited wait 2 seconds and retry once
+- If retry fails show clear error message per line
+
+---
+
+**GENERAL RULES:**
+- DO NOT modify any existing files except adding new route import at bottom of main express file
+- All new code in new files only
+- Match existing app styling exactly
+- All errors handled gracefully with clear messages
+- Mobile responsive
+- Loading states on every async action
+- Clean up all temp files from server after export complete"
