@@ -26,7 +26,9 @@ function splitIntoChunks(script: string): string[] {
   return chunks.filter((c) => c.length > 0);
 }
 
-const buildPrompt = (script: string) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
+const buildPrompt = (
+  script: string,
+) => `You are a video production assistant helping a YouTube creator scout B-roll footage.
 
 CRITICAL RULE — COVER THE ENTIRE SCRIPT: You MUST cover every single word of the script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part. Do NOT summarize. Every sentence must appear verbatim in exactly one segment. Create as many segments as needed to cover everything.
 
@@ -95,13 +97,17 @@ router.post("/analyze-script", async (req, res) => {
   const { script, groqKey } = req.body as { script?: string; groqKey?: string };
 
   if (!script || typeof script !== "string" || script.trim().length < 50) {
-    res.status(400).json({ error: "script is required and must be at least 50 characters" });
+    res
+      .status(400)
+      .json({ error: "script is required and must be at least 50 characters" });
     return;
   }
 
   const apiKey = groqKey?.trim() || process.env.GROQ_API_KEY || "";
   if (!apiKey) {
-    res.status(400).json({ error: "Groq API key is required. Add it in Settings." });
+    res
+      .status(400)
+      .json({ error: "Groq API key is required. Add it in Settings." });
     return;
   }
 
@@ -120,18 +126,27 @@ router.post("/analyze-script", async (req, res) => {
     const chunks = splitIntoChunks(script.trim());
     const total = chunks.length;
 
-    send({ type: "progress", message: `Starting analysis — ${total} part${total !== 1 ? "s" : ""} to process…` });
+    send({
+      type: "progress",
+      message: `Starting analysis — ${total} part${total !== 1 ? "s" : ""} to process…`,
+    });
 
     const allSegments: unknown[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
-      send({ type: "progress", message: `Analyzing part ${i + 1} of ${total}…` });
+      send({
+        type: "progress",
+        message: `Analyzing part ${i + 1} of ${total}…`,
+      });
       const segments = await analyzeChunk(client, chunks[i]);
       allSegments.push(...segments);
     }
 
     if (allSegments.length === 0) {
-      send({ type: "error", message: "AI returned no segments. Please try again." });
+      send({
+        type: "error",
+        message: "AI returned no segments. Please try again.",
+      });
       res.end();
       return;
     }
@@ -140,7 +155,9 @@ router.post("/analyze-script", async (req, res) => {
     const MAX_DURATION = 30;
     const clamped = allSegments.map((seg) => {
       const raw_duration = (seg as Record<string, unknown>).duration_estimate;
-      const parsed_duration = parseFloat(String(raw_duration).replace(/[^0-9.]/g, ""));
+      const parsed_duration = parseFloat(
+        String(raw_duration).replace(/[^0-9.]/g, ""),
+      );
       const clamped_duration = isNaN(parsed_duration)
         ? 20
         : Math.min(MAX_DURATION, Math.max(MIN_DURATION, parsed_duration));
@@ -154,6 +171,92 @@ router.post("/analyze-script", async (req, res) => {
     const message = (err as Error)?.message ?? "Unknown error";
     send({ type: "error", message: `Groq error: ${message}` });
     res.end();
+  }
+});
+
+router.post("/generate-ideas", async (req, res) => {
+  try {
+    const { groqKey, channelData, topVideos, niche } = req.body as {
+      groqKey?: string;
+      channelData?: any;
+      topVideos?: any[];
+      niche?: string;
+    };
+
+    const cleanKey = groqKey?.trim() || "";
+    if (!cleanKey) {
+      res
+        .status(400)
+        .json({ error: "AI API key is required. Please add it in Settings." });
+      return;
+    }
+
+    const channelName = channelData?.title || "this channel";
+    const topTitles =
+      topVideos
+        ?.slice(0, 5)
+        .map((v: any) => v.title)
+        .join("\n") || "No video data available";
+    const subscriberCount =
+      channelData?.statistics?.subscriberCount || "unknown";
+    const avgViews = channelData?.metrics?.avgViewsPerVideo || "unknown";
+    const engagement = channelData?.metrics?.avgEngagementRate || "unknown";
+
+    const prompt = `You are a YouTube growth strategist. Analyze this channel and generate video ideas.
+
+CHANNEL: ${channelName}
+NICHE: ${niche || "General"}
+SUBSCRIBERS: ${subscriberCount}
+AVG VIEWS PER VIDEO: ${avgViews}
+ENGAGEMENT RATE: ${engagement}%
+
+TOP PERFORMING VIDEOS:
+${topTitles}
+
+Based on the channel's successful content and niche, generate 10 unique video ideas that could perform well. For each idea, provide:
+1. A catchy title
+2. A brief hook (first 5-10 seconds)
+3. Key topics/angles to cover
+4. Why it would perform well
+
+Format as JSON array like this:
+[{"title": "...", "hook": "...", "topics": "...", "whyItWorks": "..."}]
+
+Generate fresh, creative ideas - not copies of existing videos but inspired by what works.`;
+
+    const client = new Groq({ apiKey: cleanKey });
+
+    const completion = await client.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: GROQ_MODEL,
+      temperature: 0.8,
+      max_tokens: 2000,
+    });
+
+    const response = completion.choices[0]?.message?.content || "";
+
+    let ideas = [];
+    try {
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        ideas = JSON.parse(jsonMatch[0]);
+      }
+    } catch {
+      ideas = [
+        {
+          title: "AI ideas",
+          hook: "Response parsing failed",
+          topics: response,
+          whyItWorks: "Raw AI response",
+        },
+      ];
+    }
+
+    res.json({ ideas, promptUsed: false });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    req.log.error({ error: errorMessage }, "Error generating video ideas");
+    res.status(500).json({ error: errorMessage });
   }
 });
 

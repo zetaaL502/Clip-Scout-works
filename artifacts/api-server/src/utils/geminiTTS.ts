@@ -125,8 +125,8 @@ function chunkText(text: string): string[] {
 // Gemini TTS call
 // ---------------------------------------------------------------------------
 
-async function callGeminiTTS(text: string, voiceName: string): Promise<Buffer> {
-  const apiKey = process.env.GEMINI_API_KEY;
+async function callGeminiTTS(text: string, voiceName: string, requestApiKey?: string): Promise<Buffer> {
+  const apiKey = requestApiKey || process.env.GEMINI_API_KEY || "AIzaSyCrUX96CuO8bXAydquWLrS4uHp_ziDF5nM";
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
 
   const ai = new GoogleGenAI({ apiKey });
@@ -161,7 +161,8 @@ async function callGeminiTTS(text: string, voiceName: string): Promise<Buffer> {
 export async function generateAudio(
   rawText: string,
   voice: string,
-  outputMp3Path: string
+  outputMp3Path: string,
+  requestApiKey?: string
 ): Promise<void> {
   const text = stripEmoji(rawText);
   if (!text) {
@@ -175,7 +176,7 @@ export async function generateAudio(
   try {
     for (let i = 0; i < chunks.length; i++) {
       const mp3Path = path.join(tmpDir, `chunk_${i}.mp3`);
-      const pcmBuffer = await callGeminiTTS(chunks[i], voice);
+      const pcmBuffer = await callGeminiTTS(chunks[i], voice, requestApiKey);
       await pcmToMp3(pcmBuffer, mp3Path);
       chunkMp3s.push(mp3Path);
     }

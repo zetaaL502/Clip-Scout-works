@@ -12,7 +12,7 @@ export interface Segment {
 export interface Clip {
   id: string;
   segmentId: string;
-  source: 'pexels' | 'giphy' | 'pixabay';
+  source: "pexels" | "giphy" | "pixabay";
   thumbnail_url: string;
   media_url: string;
   width?: number;
@@ -25,10 +25,17 @@ export interface Project {
   fullScript: string;
 }
 
-export type Page = 'home' | 'grid' | 'settings' | 'quicksend' | 'subtitles' | 'text-automation';
+export type Page =
+  | "home"
+  | "grid"
+  | "settings"
+  | "quicksend"
+  | "subtitles"
+  | "text-automation"
+  | "youtube-analytics";
 
 export interface ToastItem {
   id: string;
-  type: 'success' | 'error' | 'info';
+  type: "success" | "error" | "info";
   message: string;
 }

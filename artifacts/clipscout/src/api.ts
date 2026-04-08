@@ -1,44 +1,63 @@
-import type { Clip, Segment } from './types';
-import { storage } from './storage';
+import type { Clip, Segment } from "./types";
+import { storage } from "./storage";
 
-const PEXELS_PROXY = '/api/pexels-proxy';
-const PEXELS_VIDEO_PROXY = '/api/pexels-video';
-const ANALYZE_SCRIPT_ENDPOINT = '/api/analyze-script';
+const PEXELS_PROXY = "/api/pexels-proxy";
+const PEXELS_VIDEO_PROXY = "/api/pexels-video";
+const ANALYZE_SCRIPT_ENDPOINT = "/api/analyze/analyze-script";
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function fetchPexelsClips(segment: Segment, page: number, signal?: AbortSignal): Promise<Clip[]> {
-  const keywords = (segment.pexels_keywords ?? '').trim();
+export async function fetchPexelsClips(
+  segment: Segment,
+  page: number,
+  signal?: AbortSignal,
+): Promise<Clip[]> {
+  const keywords = (segment.pexels_keywords ?? "").trim();
   if (!keywords) return [];
 
   const isLandscape = (width?: number, height?: number) =>
-    typeof width === 'number' && typeof height === 'number' && width > height;
+    typeof width === "number" && typeof height === "number" && width > height;
 
-  const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number; duration?: number }>) =>
+  const mapClips = (
+    data: Array<{
+      id: string;
+      thumbnail_url: string;
+      media_url: string;
+      width?: number;
+      height?: number;
+      duration?: number;
+    }>,
+  ) =>
     data.slice(0, 4).map((item) => ({
-    id: `pexels-${item.id}-${page}`,
-    segmentId: segment.id,
-    source: 'pexels' as const,
-    thumbnail_url: item.thumbnail_url,
-    media_url: item.media_url,
-    width: item.width,
-    height: item.height,
-    duration: item.duration,
+      id: `pexels-${item.id}-${page}`,
+      segmentId: segment.id,
+      source: "pexels" as const,
+      thumbnail_url: item.thumbnail_url,
+      media_url: item.media_url,
+      width: item.width,
+      height: item.height,
+      duration: item.duration,
     }));
 
   try {
     const res = await fetch(PEXELS_PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ keywords, page }),
       signal,
     });
 
     if (res.ok) {
-      const data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number }> = await res.json();
+      const data: Array<{
+        id: string;
+        thumbnail_url: string;
+        media_url: string;
+        width?: number;
+        height?: number;
+      }> = await res.json();
       return mapClips(data);
     }
   } catch {
@@ -47,7 +66,9 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
 
   const pexelsKey = storage.getPexelsKey().trim();
   if (!pexelsKey) {
-    throw new Error('Pexels unavailable: server proxy failed and no fallback key in Settings.');
+    throw new Error(
+      "Pexels unavailable: server proxy failed and no fallback key in Settings.",
+    );
   }
 
   const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=20&page=${page}&min_duration=5&max_duration=30`;
@@ -59,7 +80,7 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
         signal,
       });
     } catch (e) {
-      if ((e as Error).name === 'AbortError') throw e;
+      if ((e as Error).name === "AbortError") throw e;
       if (attempt === 1) throw e;
       await delay(300);
       continue;
@@ -67,13 +88,15 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
 
     if (directRes.ok) break;
     if (!RETRYABLE_STATUS.has(directRes.status) || attempt === 1) {
-      const errText = await directRes.text().catch(() => '');
-      throw new Error(`Pexels fallback error: ${directRes.status} — ${errText}`);
+      const errText = await directRes.text().catch(() => "");
+      throw new Error(
+        `Pexels fallback error: ${directRes.status} — ${errText}`,
+      );
     }
     await delay(300);
   }
   if (!directRes?.ok) {
-    throw new Error('Pexels fallback failed after retry.');
+    throw new Error("Pexels fallback failed after retry.");
   }
 
   const directData = (await directRes.json()) as {
@@ -83,32 +106,45 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
       duration?: number;
       width?: number;
       height?: number;
-      video_files: Array<{ quality: string; link: string; file_type: string; width?: number; height?: number }>;
+      video_files: Array<{
+        quality: string;
+        link: string;
+        file_type: string;
+        width?: number;
+        height?: number;
+      }>;
     }>;
   };
   const normalized = (directData.videos ?? [])
     .filter((video) => isLandscape(video.width, video.height))
     .map((video) => {
-    const hdFile =
-      video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
-      video.video_files.find((f) => f.file_type === 'video/mp4' && isLandscape(f.width, f.height)) ??
-      video.video_files.find((f) => f.file_type === 'video/mp4') ??
-      video.video_files[0];
-    return {
-      id: String(video.id),
-      thumbnail_url: video.image,
-      media_url: hdFile?.link ?? '',
-      width: video.width,
-      height: video.height,
-      duration: video.duration,
-    };
-  });
+      const hdFile =
+        video.video_files.find(
+          (f) => f.quality === "hd" && f.file_type === "video/mp4",
+        ) ??
+        video.video_files.find(
+          (f) => f.file_type === "video/mp4" && isLandscape(f.width, f.height),
+        ) ??
+        video.video_files.find((f) => f.file_type === "video/mp4") ??
+        video.video_files[0];
+      return {
+        id: String(video.id),
+        thumbnail_url: video.image,
+        media_url: hdFile?.link ?? "",
+        width: video.width,
+        height: video.height,
+        duration: video.duration,
+      };
+    });
   return mapClips(normalized);
 }
 
-export async function fetchGiphyClips(segment: Segment, page: number): Promise<Clip[]> {
+export async function fetchGiphyClips(
+  segment: Segment,
+  page: number,
+): Promise<Clip[]> {
   const apiKey = storage.getGiphyKey();
-  const keywords = (segment.giphy_keywords ?? '').trim();
+  const keywords = (segment.giphy_keywords ?? "").trim();
   if (!keywords) return [];
   const offset = (page - 1) * 4;
   const url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(keywords)}&limit=4&offset=${offset}&rating=g`;
@@ -120,52 +156,81 @@ export async function fetchGiphyClips(segment: Segment, page: number): Promise<C
     return {
       id: `giphy-${item.id}-${page}`,
       segmentId: segment.id,
-      source: 'giphy' as const,
-      thumbnail_url: images?.fixed_height_still?.url ?? '',
-      media_url: images?.original?.url ?? images?.original_mp4?.mp4 ?? '',
+      source: "giphy" as const,
+      thumbnail_url: images?.fixed_height_still?.url ?? "",
+      media_url: images?.original?.url ?? images?.original_mp4?.mp4 ?? "",
     };
   });
 }
 
-export async function fetchPixabayClips(keywords: string, page: number, segmentId: string, signal?: AbortSignal): Promise<Clip[]> {
+export async function fetchPixabayClips(
+  keywords: string,
+  page: number,
+  segmentId: string,
+  signal?: AbortSignal,
+): Promise<Clip[]> {
   const query = keywords.trim();
   if (!query) return [];
 
   const isLandscape = (width?: number, height?: number) =>
-    typeof width === 'number' && typeof height === 'number' && width > height;
+    typeof width === "number" && typeof height === "number" && width > height;
 
-  const mapHits = (hits: Array<{ id: number; duration: number; videos: Record<string, { url: string; width: number; height: number; thumbnail?: string } | undefined> }>) =>
+  const mapHits = (
+    hits: Array<{
+      id: number;
+      duration: number;
+      videos: Record<
+        string,
+        | { url: string; width: number; height: number; thumbnail?: string }
+        | undefined
+      >;
+    }>,
+  ) =>
     hits
       .map((hit) => {
-        const video = hit.videos['large'] ?? hit.videos['medium'] ?? hit.videos['small'] ?? hit.videos['tiny'];
+        const video =
+          hit.videos["large"] ??
+          hit.videos["medium"] ??
+          hit.videos["small"] ??
+          hit.videos["tiny"];
         if (!video?.url) return null;
         return {
           id: `pixabay-${hit.id}-${page}`,
           segmentId,
-          source: 'pixabay' as const,
-          thumbnail_url: video.thumbnail ?? '',
+          source: "pixabay" as const,
+          thumbnail_url: video.thumbnail ?? "",
           media_url: video.url,
           width: video.width,
           height: video.height,
           duration: hit.duration,
         };
       })
-      .filter((c): c is NonNullable<typeof c> => c !== null && isLandscape(c.width, c.height))
+      .filter(
+        (c): c is NonNullable<typeof c> =>
+          c !== null && isLandscape(c.width, c.height),
+      )
       .slice(0, 4);
 
   try {
-    const res = await fetch('/api/pixabay-proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/api/pixabay-proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ keywords: query, page }),
       signal,
     });
     if (res.ok) {
-      const data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number; duration?: number }> = await res.json();
+      const data: Array<{
+        id: string;
+        thumbnail_url: string;
+        media_url: string;
+        width?: number;
+        height?: number;
+        duration?: number;
+      }> = await res.json();
       return data.slice(0, 4).map((item) => ({
         id: `pixabay-${item.id}-${page}`,
         segmentId,
-        source: 'pixabay' as const,
+        source: "pixabay" as const,
         thumbnail_url: item.thumbnail_url,
         media_url: item.media_url,
         width: item.width,
@@ -179,7 +244,9 @@ export async function fetchPixabayClips(keywords: string, page: number, segmentI
 
   const pixabayKey = storage.getPixabayKey().trim();
   if (!pixabayKey) {
-    throw new Error('Pixabay unavailable: server proxy failed and no Pixabay key in Settings.');
+    throw new Error(
+      "Pixabay unavailable: server proxy failed and no Pixabay key in Settings.",
+    );
   }
 
   const url = `https://pixabay.com/api/videos/?key=${pixabayKey}&q=${encodeURIComponent(query)}&per_page=20&page=${page}&video_type=film`;
@@ -189,28 +256,39 @@ export async function fetchPixabayClips(keywords: string, page: number, segmentI
     hits: Array<{
       id: number;
       duration: number;
-      videos: Record<string, { url: string; width: number; height: number; thumbnail?: string } | undefined>;
+      videos: Record<
+        string,
+        | { url: string; width: number; height: number; thumbnail?: string }
+        | undefined
+      >;
     }>;
   };
   return mapHits(data.hits ?? []);
 }
 
-export async function fetchBestPexelsExportUrl(videoId: string): Promise<string> {
-  const res = await fetch(`${PEXELS_VIDEO_PROXY}/${encodeURIComponent(videoId)}`);
+export async function fetchBestPexelsExportUrl(
+  videoId: string,
+): Promise<string> {
+  const res = await fetch(
+    `${PEXELS_VIDEO_PROXY}/${encodeURIComponent(videoId)}`,
+  );
   if (!res.ok) {
     throw new Error(`Pexels video details error: ${res.status}`);
   }
   const data = (await res.json()) as { media_url?: string };
   if (!data.media_url) {
-    throw new Error('Pexels video details response missing media_url');
+    throw new Error("Pexels video details response missing media_url");
   }
   return data.media_url;
 }
 
-type RawSegment = Omit<Segment, 'id' | 'pexels_page' | 'giphy_page'>;
+type RawSegment = Omit<Segment, "id" | "pexels_page" | "giphy_page">;
 
-export async function analyzeScript(script: string, onStatus?: (msg: string) => void): Promise<RawSegment[]> {
-  onStatus?.('Reading your script…');
+export async function analyzeScript(
+  script: string,
+  onStatus?: (msg: string) => void,
+): Promise<RawSegment[]> {
+  onStatus?.("Reading your script…");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180_000);
@@ -218,8 +296,8 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
   try {
     const groqKey = storage.getGroqKey().trim();
     const res = await fetch(ANALYZE_SCRIPT_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ script, groqKey: groqKey || undefined }),
       signal: controller.signal,
     });
@@ -227,15 +305,15 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
     clearTimeout(timeout);
 
     if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `Server error: ${res.status}`);
     }
 
     const reader = res.body?.getReader();
-    if (!reader) throw new Error('No response stream available.');
+    if (!reader) throw new Error("No response stream available.");
 
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
     let segments: RawSegment[] = [];
 
     while (true) {
@@ -243,22 +321,22 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
+        if (!line.startsWith("data: ")) continue;
         try {
           const event = JSON.parse(line.slice(6)) as {
             type: string;
             message?: string;
             segments?: RawSegment[];
           };
-          if (event.type === 'progress' && event.message) {
+          if (event.type === "progress" && event.message) {
             onStatus?.(event.message);
-          } else if (event.type === 'result' && event.segments) {
+          } else if (event.type === "result" && event.segments) {
             segments = event.segments;
-          } else if (event.type === 'error' && event.message) {
+          } else if (event.type === "error" && event.message) {
             throw new Error(event.message);
           }
         } catch {
@@ -268,14 +346,16 @@ export async function analyzeScript(script: string, onStatus?: (msg: string) => 
     }
 
     if (segments.length === 0) {
-      throw new Error('Groq returned no segments. Please try again.');
+      throw new Error("Groq returned no segments. Please try again.");
     }
 
-    segments.forEach((seg, i) => { seg.order_index = i + 1; });
+    segments.forEach((seg, i) => {
+      seg.order_index = i + 1;
+    });
     return segments;
   } catch (e) {
     clearTimeout(timeout);
-    if ((e as Error).name === 'AbortError') throw new Error('TIMEOUT');
+    if ((e as Error).name === "AbortError") throw new Error("TIMEOUT");
     throw e;
   }
 }

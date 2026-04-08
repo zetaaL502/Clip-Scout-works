@@ -1,4 +1,9 @@
-import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "node:path";
@@ -20,7 +25,12 @@ function rateLimiter(req: Request, res: Response, next: NextFunction): void {
     next();
     return;
   }
-  const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket?.remoteAddress ?? "unknown";
+  const ip =
+    (req.headers["x-forwarded-for"] as string | undefined)
+      ?.split(",")[0]
+      ?.trim() ??
+    req.socket?.remoteAddress ??
+    "unknown";
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
   if (!entry || now > entry.resetAt) {
@@ -46,7 +56,11 @@ const corsOptions: cors.CorsOptions = {
       origin.endsWith(".replit.app") ||
       origin.endsWith(".pike.replit.dev") ||
       origin.endsWith(".railway.app") ||
-      origin.endsWith(".up.railway.app")
+      origin.endsWith(".up.railway.app") ||
+      origin.includes(".ngrok-free.app") ||
+      origin.includes(".ngrok-free.dev") ||
+      origin.includes(".ngrok.io") ||
+      origin.includes("localhost")
     ) {
       callback(null, true);
     } else {
@@ -83,8 +97,14 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", router);
 
 // --- Serve frontend static files ---
-const frontendDist = path.resolve(__dirname, "../../../artifacts/clipscout/dist/public");
-app.use(express.static(frontendDist));
+const frontendDist = path.join(process.cwd(), "../clipscout/dist/public");
+console.log("Frontend path:", frontendDist);
+app.use(
+  express.static(frontendDist, {
+    fallthrough: false,
+    redirect: false,
+  }),
+);
 
 // --- Catch-all: serve index.html for client-side routing ---
 app.get(/.*/, (_req: Request, res: Response) => {
