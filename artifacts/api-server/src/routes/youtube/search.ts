@@ -62,7 +62,7 @@ router.get("/search", async (req, res): Promise<void> => {
     );
 
     const searchRes = await fetch(searchUrl.toString());
-    const searchData = await searchRes.json();
+    const searchData = await searchRes.json() as any;
 
     if (!searchRes.ok) {
       logger.error({ error: searchData }, "YouTube search API error");
@@ -91,7 +91,7 @@ router.get("/search", async (req, res): Promise<void> => {
     );
 
     const videosRes = await fetch(videosUrl.toString());
-    const videosData = await videosRes.json();
+    const videosData = await videosRes.json() as any;
 
     if (!videosRes.ok) {
       logger.error({ error: videosData }, "YouTube videos API error");
@@ -122,7 +122,7 @@ router.get("/search", async (req, res): Promise<void> => {
       );
 
       const channelsRes = await fetch(channelsUrl.toString());
-      const channelsData = await channelsRes.json();
+      const channelsData = await channelsRes.json() as any;
 
       if (channelsRes.ok) {
         (channelsData.items || []).forEach((channel: any) => {
@@ -197,7 +197,7 @@ router.get("/channel", async (req, res): Promise<void> => {
     );
 
     const channelRes = await fetch(channelUrl.toString());
-    const channelData = await channelRes.json();
+    const channelData = await channelRes.json() as any;
 
     if (!channelRes.ok) {
       logger.error({ error: channelData }, "YouTube channel API error");
@@ -229,7 +229,7 @@ router.get("/channel", async (req, res): Promise<void> => {
       );
 
       const playlistRes = await fetch(playlistUrl.toString());
-      const playlistData = await playlistRes.json();
+      const playlistData = await playlistRes.json() as any;
 
       if (playlistRes.ok && playlistData.items) {
         const videoIds = playlistData.items
@@ -252,7 +252,7 @@ router.get("/channel", async (req, res): Promise<void> => {
           );
 
           const videosRes = await fetch(videosUrl.toString());
-          const videosData = await videosRes.json();
+          const videosData = await videosRes.json() as any;
 
           if (videosRes.ok && videosData.items) {
             allVideos = videosData.items.map((video: any) => {
@@ -398,7 +398,7 @@ router.get("/channel-by-name", async (req, res): Promise<void> => {
     );
 
     const searchRes = await fetch(searchUrl.toString());
-    const searchData = await searchRes.json();
+    const searchData = await searchRes.json() as any;
 
     if (!searchRes.ok) {
       logger.error({ error: searchData }, "YouTube search API error");
@@ -428,7 +428,7 @@ router.get("/channel-by-name", async (req, res): Promise<void> => {
     );
 
     const channelRes = await fetch(channelUrl.toString());
-    const channelData = await channelRes.json();
+    const channelData = await channelRes.json() as any;
 
     if (!channelRes.ok) {
       logger.error({ error: channelData }, "YouTube channels API error");
@@ -464,7 +464,7 @@ router.get("/channel-by-name", async (req, res): Promise<void> => {
       };
     });
 
-    enrichedChannels.sort((a, b) => b.subscriberCount - a.subscriberCount);
+    enrichedChannels.sort((a: { subscriberCount: number }, b: { subscriberCount: number }) => b.subscriberCount - a.subscriberCount);
 
     res.json({ channels: enrichedChannels });
   } catch (error: unknown) {
@@ -607,7 +607,7 @@ router.get("/discover", async (req, res): Promise<void> => {
     );
 
     const searchRes = await fetch(searchUrl.toString());
-    const searchData = await searchRes.json();
+    const searchData = await searchRes.json() as any;
 
     if (!searchRes.ok) {
       throw new Error(
@@ -665,7 +665,7 @@ router.get("/discover", async (req, res): Promise<void> => {
       );
 
       const channelsRes = await fetch(channelsUrl.toString());
-      const channelsData = await channelsRes.json();
+      const channelsData = await channelsRes.json() as any;
 
       if (channelsRes.ok && channelsData.items) {
         channelsData.items.forEach((channel: any) => {
@@ -705,7 +705,7 @@ router.get("/discover", async (req, res): Promise<void> => {
       videosUrl.searchParams.set("fields", "items(id,statistics(viewCount))");
 
       const videosRes = await fetch(videosUrl.toString());
-      const videosData = await videosRes.json();
+      const videosData = await videosRes.json() as any;
 
       if (videosRes.ok && videosData.items) {
         videosData.items.forEach((video: any) => {

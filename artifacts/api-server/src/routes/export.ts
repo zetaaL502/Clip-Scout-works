@@ -126,7 +126,7 @@ router.post("/server-export", async (req: Request, res: Response) => {
 });
 
 router.get("/export-progress/:jobId", (req: Request, res: Response) => {
-  const { jobId } = req.params;
+  const { jobId } = req.params as { jobId: string };
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -163,7 +163,7 @@ router.get("/export-progress/:jobId", (req: Request, res: Response) => {
 });
 
 router.get("/download/:zipId", (req: Request, res: Response) => {
-  const { zipId } = req.params;
+  const { zipId } = req.params as { zipId: string };
   const entry = zipFiles.get(zipId);
 
   if (!entry || !fs.existsSync(entry.filePath)) {

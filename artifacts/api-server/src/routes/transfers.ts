@@ -111,7 +111,7 @@ router.post("/transfers/upload", upload.array("files", 20), async (req: Request,
 });
 
 router.get("/transfers/download/:transferId", (req: Request, res: Response) => {
-  const { transferId } = req.params;
+  const { transferId } = req.params as { transferId: string };
   const entry = transfers.get(transferId);
 
   if (!entry || !fs.existsSync(entry.filePath)) {

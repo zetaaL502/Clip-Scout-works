@@ -20,6 +20,7 @@ interface CompetitorChannel {
   monthsOld: number;
   potential: string;
   viewsPerVideoRatio: number;
+  lastUpdated: string;
 }
 
 router.get("/load", async (req, res): Promise<void> => {

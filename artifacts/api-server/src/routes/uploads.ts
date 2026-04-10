@@ -72,11 +72,22 @@ router.post("/extract-zip", async (req: Request, res: Response) => {
       return;
     }
 
-    // Simple multipart parsing
+    function splitBuffer(buf: Buffer, sep: Buffer): Buffer[] {
+      const result: Buffer[] = [];
+      let start = 0;
+      while (true) {
+        const idx = buf.indexOf(sep, start);
+        if (idx === -1) { result.push(buf.slice(start)); break; }
+        result.push(buf.slice(start, idx));
+        start = idx + sep.length;
+      }
+      return result;
+    }
+
     const boundaryBuffer = Buffer.from(`--${boundary}`);
     const endBoundary = Buffer.from(`--${boundary}--`);
 
-    const parts = body.split(boundaryBuffer);
+    const parts = splitBuffer(body, boundaryBuffer);
     let zipBuffer: Buffer | null = null;
 
     for (const part of parts) {
@@ -206,7 +217,7 @@ router.post("/extract-zip", async (req: Request, res: Response) => {
 router.get(
   "/uploaded-file/:uploadId/:filename",
   async (req: Request, res: Response) => {
-    const { uploadId, filename } = req.params;
+    const { uploadId, filename } = req.params as { uploadId: string; filename: string };
     const filePath = path.join(UPLOADS_DIR, uploadId, filename);
 
     if (!fs.existsSync(filePath)) {

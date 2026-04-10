@@ -507,7 +507,18 @@ export function GridPage({ onBack, onSettings }: Props) {
         clipByKey.set(`segment_${segIdx}_clip_${clipIdx}`, clip);
       });
 
-      segCustoms.forEach((clip, clipIdx) => {
+      segCustoms.forEach((upload, clipIdx) => {
+        const clip: Clip = {
+          id: upload.id,
+          segmentId: seg.id,
+          source: "custom",
+          thumbnail_url: upload.thumbnailData || "",
+          media_url: upload.mediaData || upload.thumbnailData || "",
+          width: 1280,
+          height: 720,
+          duration: upload.duration || 15,
+          fileName: upload.fileName,
+        };
         clipByKey.set(
           `segment_${segIdx}_clip_${segClips.length + clipIdx}`,
           clip,

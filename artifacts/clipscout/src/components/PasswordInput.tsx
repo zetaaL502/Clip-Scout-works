@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 interface Props {
@@ -43,7 +43,7 @@ export function PasswordInput({
           placeholder={placeholder}
           autoComplete="off"
           spellCheck={false}
-          style={{ WebkitTextSecurity: show ? "none" : "disc" }}
+          style={{ WebkitTextSecurity: show ? "none" : "disc" } as React.CSSProperties}
           className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-[#22c55e] text-base"
         />
         <button

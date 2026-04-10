@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createReadStream, unlinkSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import type { Writable } from "node:stream";
 
 const router: IRouter = Router();
 
@@ -241,7 +242,7 @@ function cleanupTmp(path: string): void {
 // Using a real output file (not pipe:1) lets FFmpeg write a proper moov atom with
 // correct duration — fragmented/empty_moov variants cause editing apps to show 0s duration.
 async function runFfmpegTrim(
-  feedFn: (stdin: NodeJS.WritableStream) => void,
+  feedFn: (stdin: Writable) => void,
   logWarn: (msg: string) => void,
   logError: (msg: string) => void,
 ): Promise<string> {
