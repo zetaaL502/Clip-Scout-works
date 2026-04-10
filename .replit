@@ -69,6 +69,7 @@ modules = ["nodejs-24", "python3.11", "python3"]
 
   [userenv.shared]
   AI_INTEGRATIONS_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com"
+PEXELS_API_KEY = "B3naJ4sFU2508yTY9vfRdsBFyXz29jol4CVMIgwtZM9z8UUvQZAPqYSk"
 
   [nix]
   channel = "stable-25_05"
