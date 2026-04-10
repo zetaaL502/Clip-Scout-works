@@ -1,21 +1,29 @@
-import type { Project, Segment, Clip } from "./types";
+import type { Project, Segment, Clip, CustomUpload } from "./types";
 
 const KEYS = {
   PROJECT: "clipscout_project",
   SEGMENTS: "clipscout_segments",
   CLIPS: "clipscout_clips",
   SELECTIONS: "clipscout_selections",
+  CUSTOM_UPLOADS: "clipscout_custom_uploads",
   GROQ_KEY: "clipscout_groq_key",
   GEMINI_KEY: "clipscout_gemini_key",
   GIPHY_KEY: "clipscout_giphy_key",
   PEXELS_KEY: "clipscout_pexels_key",
   PIXABAY_KEY: "clipscout_pixabay_key",
   YOUTUBE_KEY: "clipscout_youtube_key",
+  ASSEMBLYAI_KEY: "clipscout_assemblyai_key",
+  GIFIFY_KEY: "clipscout_gifify_key",
 };
+
+console.log("[Storage] LocalStorage keys:", KEYS);
 
 function get<T>(key: string): T | null {
   try {
     const v = localStorage.getItem(key);
+    if (v && key.includes("key")) {
+      console.log(`[Storage] GET ${key}:`, v ? `${v.slice(0, 10)}...` : "null");
+    }
     return v ? JSON.parse(v) : null;
   } catch {
     return null;
@@ -24,6 +32,13 @@ function get<T>(key: string): T | null {
 
 function set(key: string, value: unknown): void {
   try {
+    if (key.includes("key")) {
+      const str = JSON.stringify(value);
+      console.log(
+        `[Storage] SET ${key}:`,
+        str ? `${str.slice(0, 10)}...` : "empty",
+      );
+    }
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // QuotaExceededError — storage is full; silently ignore to prevent crash.
@@ -60,6 +75,10 @@ export const storage = {
   setPixabayKey: (k: string) => localStorage.setItem(KEYS.PIXABAY_KEY, k),
   getYouTubeKey: () => localStorage.getItem(KEYS.YOUTUBE_KEY) ?? "",
   setYouTubeKey: (k: string) => localStorage.setItem(KEYS.YOUTUBE_KEY, k),
+  getAssemblyAIKey: () => localStorage.getItem(KEYS.ASSEMBLYAI_KEY) ?? "",
+  setAssemblyAIKey: (k: string) => localStorage.setItem(KEYS.ASSEMBLYAI_KEY, k),
+  getGififyKey: () => localStorage.getItem(KEYS.GIFIFY_KEY) ?? "",
+  setGififyKey: (k: string) => localStorage.setItem(KEYS.GIFIFY_KEY, k),
 
   getProject: () => get<Project>(KEYS.PROJECT),
   setProject: (p: Project) => set(KEYS.PROJECT, p),
@@ -126,5 +145,30 @@ export const storage = {
       /^segment_\d+_clip_\d+$/.test(key),
     );
     return filtered.includes(id);
+  },
+
+  getCustomUploads: (): Record<string, CustomUpload[]> => {
+    return get<Record<string, CustomUpload[]>>(KEYS.CUSTOM_UPLOADS) ?? {};
+  },
+  setCustomUploads: (uploads: Record<string, CustomUpload[]>) => {
+    set(KEYS.CUSTOM_UPLOADS, uploads);
+  },
+  addCustomUpload: (segmentId: string, upload: CustomUpload) => {
+    const all = storage.getCustomUploads();
+    if (!all[segmentId]) all[segmentId] = [];
+    all[segmentId].push(upload);
+    storage.setCustomUploads(all);
+  },
+  removeCustomUpload: (segmentId: string, uploadId: string) => {
+    const all = storage.getCustomUploads();
+    if (all[segmentId]) {
+      all[segmentId] = all[segmentId].filter((u) => u.id !== uploadId);
+      storage.setCustomUploads(all);
+    }
+  },
+  clearCustomUploads: (segmentId: string) => {
+    const all = storage.getCustomUploads();
+    delete all[segmentId];
+    storage.setCustomUploads(all);
   },
 };

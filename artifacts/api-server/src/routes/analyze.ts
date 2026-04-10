@@ -83,13 +83,26 @@ async function analyzeChunk(client: Groq, chunk: string): Promise<unknown[]> {
   const completion = await client.chat.completions.create({
     model: GROQ_MODEL,
     messages: [{ role: "user", content: buildPrompt(chunk) }],
-    response_format: { type: "json_object" },
     temperature: 0.3,
     max_tokens: 4096,
   });
 
   const raw = completion.choices[0]?.message?.content ?? "{}";
-  const parsed = JSON.parse(raw) as { segments?: unknown[] };
+  let parsed: { segments?: unknown[] } = {};
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        return [];
+      }
+    }
+  }
+
   return parsed.segments ?? [];
 }
 

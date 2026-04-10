@@ -11,10 +11,19 @@ import http from "node:http";
 
 const router = Router();
 
-const EXPORTS_DIR = "/tmp/exports";
+const EXPORTS_DIR =
+  process.platform === "win32"
+    ? path.join(process.env.TEMP || "C:\\Windows\\Temp", "clipscout_exports")
+    : "/tmp/exports";
 const AUTO_DELETE_MS = 60 * 60 * 1000;
 const MAX_CLIP_SECONDS = 30;
-const ZIP_FOLDER_NAME = "youtube_export"; // must match the computer export folder name
+const ZIP_FOLDER_NAME = "youtube_export";
+const IMAGE_DURATION = 5; // images get exactly 5 seconds
+
+const FFmpeg_PATH =
+  process.platform === "win32"
+    ? "C:\\Users\\Galaxy\\Downloads\\ffmpeg-master-latest-win64-gpl\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe"
+    : "ffmpeg";
 
 type JobStatus = "processing" | "done" | "error";
 
@@ -31,10 +40,14 @@ interface Job {
 interface ExportSegment {
   urls: string[];
   duration: number; // segment duration in seconds (e.g. 15, 20, 30)
+  types: ("image" | "video")[]; // identify images vs videos
 }
 
 const jobs = new Map<string, Job>();
-const zipFiles = new Map<string, { filePath: string; timer: ReturnType<typeof setTimeout> }>();
+const zipFiles = new Map<
+  string,
+  { filePath: string; timer: ReturnType<typeof setTimeout> }
+>();
 
 fsp.mkdir(EXPORTS_DIR, { recursive: true }).catch(() => {});
 
@@ -58,15 +71,25 @@ router.post("/server-export", async (req: Request, res: Response) => {
         typeof (s as ExportSegment).duration === "number",
     );
     if (validSegments.length === 0) {
-      res.status(400).json({ error: "segments must be a non-empty array of {urls, duration}" });
+      res.status(400).json({
+        error: "segments must be a non-empty array of {urls, duration}",
+      });
       return;
     }
+
     const jobId = randomUUID();
-    jobs.set(jobId, { status: "processing", current: 0, total: validSegments.length });
+    jobs.set(jobId, {
+      status: "processing",
+      current: 0,
+      total: validSegments.length,
+    });
     res.json({ jobId });
     processSegmentsExport(jobId, validSegments, origin).catch((err: Error) => {
       const job = jobs.get(jobId);
-      if (job) { job.status = "error"; job.error = err.message; }
+      if (job) {
+        job.status = "error";
+        job.error = err.message;
+      }
     });
     return;
   }
@@ -77,14 +100,20 @@ router.post("/server-export", async (req: Request, res: Response) => {
     return;
   }
 
-  const stringUrls = (urls as unknown[]).filter((u): u is string => typeof u === "string");
+  const stringUrls = (urls as unknown[]).filter(
+    (u): u is string => typeof u === "string",
+  );
   if (stringUrls.length === 0) {
     res.status(400).json({ error: "urls must be an array of strings" });
     return;
   }
 
   const jobId = randomUUID();
-  jobs.set(jobId, { status: "processing", current: 0, total: stringUrls.length });
+  jobs.set(jobId, {
+    status: "processing",
+    current: 0,
+    total: stringUrls.length,
+  });
   res.json({ jobId });
 
   processExport(jobId, stringUrls, origin).catch((err: Error) => {
@@ -150,34 +179,64 @@ router.get("/download/:zipId", (req: Request, res: Response) => {
 
 // Download a URL to a file path, following redirects.
 function downloadFile(url: string, dest: string): Promise<void> {
+  // Handle data URLs (base64 custom uploads)
+  if (url.startsWith("data:")) {
+    return new Promise((resolve, reject) => {
+      try {
+        const base64Data = url.split(",")[1];
+        if (!base64Data) {
+          reject(new Error("Invalid data URL"));
+          return;
+        }
+        const buffer = Buffer.from(base64Data, "base64");
+        fs.writeFileSync(dest, buffer);
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
 
     function fetchUrl(targetUrl: string) {
       const protocol = targetUrl.startsWith("https") ? https : http;
+      const isGiphy =
+        targetUrl.includes("giphy.com") || targetUrl.includes("giphy-media");
+
       protocol
-        .get(targetUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://www.pexels.com/",
-            "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9",
+        .get(
+          targetUrl,
+          {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              Referer: isGiphy
+                ? "https://giphy.com/"
+                : "https://www.pexels.com/",
+              Accept: isGiphy
+                ? "image/gif,*/*;q=0.9"
+                : "video/webm,video/mp4,video/*,*/*;q=0.9",
+            },
           },
-        }, (response) => {
-          if (
-            (response.statusCode === 301 || response.statusCode === 302) &&
-            response.headers.location
-          ) {
-            // redirect — don't write to file yet, follow the redirect
-            fetchUrl(response.headers.location);
-            return;
-          }
-          response.pipe(file);
-          file.on("finish", () => file.close(() => resolve()));
-          response.on("error", (err) => {
-            fsp.unlink(dest).catch(() => {});
-            reject(err);
-          });
-        })
+          (response) => {
+            if (
+              (response.statusCode === 301 || response.statusCode === 302) &&
+              response.headers.location
+            ) {
+              // redirect — don't write to file yet, follow the redirect
+              fetchUrl(response.headers.location);
+              return;
+            }
+            response.pipe(file);
+            file.on("finish", () => file.close(() => resolve()));
+            response.on("error", (err) => {
+              fsp.unlink(dest).catch(() => {});
+              reject(err);
+            });
+          },
+        )
         .on("error", (err) => {
           fsp.unlink(dest).catch(() => {});
           reject(err);
@@ -191,54 +250,75 @@ function downloadFile(url: string, dest: string): Promise<void> {
 // Run FFmpeg on an already-downloaded file to fix MP4 metadata.
 // Identical fix to /trim-video-url: outputs to a real file with +faststart
 // so editing apps (VN, CapCut, etc.) see the correct duration.
-function fixVideoMetadata(inputPath: string, outputPath: string): Promise<void> {
+function fixVideoMetadata(
+  inputPath: string,
+  outputPath: string,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ffmpeg = spawn("ffmpeg", [
-      "-loglevel", "error",
-      "-i", inputPath,
-      "-t", String(MAX_CLIP_SECONDS),
-      "-c", "copy",
-      "-movflags", "+faststart",
-      outputPath,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-loglevel",
+        "error",
+        "-i",
+        inputPath,
+        "-t",
+        String(MAX_CLIP_SECONDS),
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
 
     const stderrChunks: string[] = [];
-    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+    ffmpeg.stderr.on("data", (chunk: Buffer) =>
+      stderrChunks.push(chunk.toString()),
+    );
 
     ffmpeg.on("error", reject);
     ffmpeg.on("close", (code) => {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}: ${stderrChunks.join("")}`));
+        reject(
+          new Error(
+            `FFmpeg exited with code ${code}: ${stderrChunks.join("")}`,
+          ),
+        );
       }
     });
   });
 }
 
-// Probe the actual duration of a downloaded video file using ffprobe.
+// Probe the actual duration of a downloaded video file using FFmpeg.
 // Returns 0 if the duration cannot be determined.
 function getVideoDuration(filePath: string): Promise<number> {
   return new Promise((resolve) => {
-    const ffprobe = spawn("ffprobe", [
-      "-v", "quiet",
-      "-print_format", "json",
-      "-show_format",
-      filePath,
-    ], { stdio: ["ignore", "pipe", "ignore"] });
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        filePath,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
 
     let stdout = "";
-    ffprobe.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-    ffprobe.on("error", () => resolve(0));
-    ffprobe.on("close", (code) => {
-      if (code !== 0) { resolve(0); return; }
-      try {
-        const info = JSON.parse(stdout) as { format?: { duration?: string } };
-        const dur = parseFloat(info.format?.duration ?? "0");
-        resolve(isNaN(dur) ? 0 : dur);
-      } catch {
-        resolve(0);
-      }
+    ffmpeg.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    ffmpeg.on("error", () => resolve(0));
+    ffmpeg.on("close", () => {
+      const parsed = parseFloat(stdout.trim());
+      resolve(isNaN(parsed) ? 0 : parsed);
     });
   });
 }
@@ -246,85 +326,207 @@ function getVideoDuration(filePath: string): Promise<number> {
 // NEW FEATURE: Multi-video per segment duration division, trimming and stitching
 // Trim a video file to exactly `durationSecs` seconds, re-encoding to h264/aac for consistent format.
 // If the source is shorter than durationSecs FFmpeg simply outputs the full source (no error).
-function trimVideo(inputPath: string, outputPath: string, durationSecs: number): Promise<void> {
+function trimVideo(
+  inputPath: string,
+  outputPath: string,
+  durationSecs: number,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ffmpeg = spawn("ffmpeg", [
-      "-loglevel", "error",
-      "-i", inputPath,
-      "-t", durationSecs.toFixed(3),
-      "-c:v", "libx264",
-      "-preset", "fast",
-      "-crf", "23",
-      "-c:a", "aac",
-      "-movflags", "+faststart",
-      outputPath,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-loglevel",
+        "error",
+        "-i",
+        inputPath,
+        "-t",
+        durationSecs.toFixed(3),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
 
     const stderrChunks: string[] = [];
-    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+    ffmpeg.stderr.on("data", (chunk: Buffer) =>
+      stderrChunks.push(chunk.toString()),
+    );
     ffmpeg.on("error", reject);
     ffmpeg.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`FFmpeg trim failed (code ${code}): ${stderrChunks.join("")}`));
+      else
+        reject(
+          new Error(
+            `FFmpeg trim failed (code ${code}): ${stderrChunks.join("")}`,
+          ),
+        );
     });
   });
 }
 
 // Loop a video seamlessly using -stream_loop -1 then trim to exactly `targetSecs`.
 // Used when the source clip is shorter than the target sub-duration.
-function loopAndTrimVideo(inputPath: string, outputPath: string, targetSecs: number): Promise<void> {
+function loopAndTrimVideo(
+  inputPath: string,
+  outputPath: string,
+  targetSecs: number,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ffmpeg = spawn("ffmpeg", [
-      "-loglevel", "error",
-      "-stream_loop", "-1",   // loop input indefinitely
-      "-i", inputPath,
-      "-t", targetSecs.toFixed(3),
-      "-c:v", "libx264",
-      "-preset", "fast",
-      "-crf", "23",
-      "-c:a", "aac",
-      "-movflags", "+faststart",
-      outputPath,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-loglevel",
+        "error",
+        "-stream_loop",
+        "-1",
+        "-i",
+        inputPath,
+        "-t",
+        targetSecs.toFixed(3),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
 
     const stderrChunks: string[] = [];
-    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
+    ffmpeg.stderr.on("data", (chunk: Buffer) =>
+      stderrChunks.push(chunk.toString()),
+    );
     ffmpeg.on("error", reject);
     ffmpeg.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`FFmpeg loop failed (code ${code}): ${stderrChunks.join("")}`));
+      else
+        reject(
+          new Error(
+            `FFmpeg loop failed (code ${code}): ${stderrChunks.join("")}`,
+          ),
+        );
     });
   });
 }
 
 // NEW FEATURE: Multi-video per segment duration division, trimming and stitching
 // Concatenate multiple video files (all same codec) into a single output using FFmpeg concat demuxer.
-async function stitchVideos(inputPaths: string[], outputPath: string, tempDir: string): Promise<void> {
+async function stitchVideos(
+  inputPaths: string[],
+  outputPath: string,
+  tempDir: string,
+): Promise<void> {
   if (inputPaths.length === 1) {
     await fsp.copyFile(inputPaths[0], outputPath);
     return;
   }
-  const listFile = path.join(tempDir, `concat_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+  const listFile = path.join(
+    tempDir,
+    `concat_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`,
+  );
   const listContent = inputPaths.map((p) => `file '${p}'`).join("\n");
   await fsp.writeFile(listFile, listContent, "utf8");
   return new Promise((resolve, reject) => {
-    const ffmpeg = spawn("ffmpeg", [
-      "-loglevel", "error",
-      "-f", "concat",
-      "-safe", "0",
-      "-i", listFile,
-      "-c", "copy",
-      "-movflags", "+faststart",
-      outputPath,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listFile,
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
 
     const stderrChunks: string[] = [];
-    ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()));
-    ffmpeg.on("error", (err) => { fsp.unlink(listFile).catch(() => {}); reject(err); });
+    ffmpeg.stderr.on("data", (chunk: Buffer) =>
+      stderrChunks.push(chunk.toString()),
+    );
+    ffmpeg.on("error", (err) => {
+      fsp.unlink(listFile).catch(() => {});
+      reject(err);
+    });
     ffmpeg.on("close", (code) => {
       fsp.unlink(listFile).catch(() => {});
       if (code === 0) resolve();
-      else reject(new Error(`FFmpeg stitch failed (code ${code}): ${stderrChunks.join("")}`));
+      else
+        reject(
+          new Error(
+            `FFmpeg stitch failed (code ${code}): ${stderrChunks.join("")}`,
+          ),
+        );
+    });
+  });
+}
+
+// Convert an image to a video with exact duration
+function imageToVideo(
+  inputPath: string,
+  outputPath: string,
+  durationSecs: number,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-loop",
+        "1",
+        "-i",
+        inputPath,
+        "-t",
+        durationSecs.toFixed(3),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+
+    const stderrChunks: string[] = [];
+    ffmpeg.stderr.on("data", (chunk: Buffer) =>
+      stderrChunks.push(chunk.toString()),
+    );
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => {
+      if (code === 0) resolve();
+      else
+        reject(
+          new Error(
+            `FFmpeg image->video failed (code ${code}): ${stderrChunks.join("")}`,
+          ),
+        );
     });
   });
 }
@@ -332,7 +534,11 @@ async function stitchVideos(inputPaths: string[], outputPath: string, tempDir: s
 // NEW FEATURE: Multi-video per segment duration division, trimming and stitching
 // For each segment: divide its duration equally among N selected clips, trim each, stitch per segment,
 // then stitch all segments into one master video and deliver via the existing QR/download flow.
-async function processSegmentsExport(jobId: string, segments: ExportSegment[], origin: string): Promise<void> {
+async function processSegmentsExport(
+  jobId: string,
+  segments: ExportSegment[],
+  origin: string,
+): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) return;
 
@@ -343,34 +549,54 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
   const segmentOutputPaths: string[] = [];
 
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
-    const { urls, duration } = segments[segIdx];
+    const { urls, duration, types } = segments[segIdx];
     const N = urls.length;
-    // sub_duration = segment_duration / N  (floating-point division)
-    const subDuration = duration / N;
 
-    const DURATION_TOLERANCE = 0.1; // seconds — treat clips within 0.1s as "equal"
+    // Count images (each gets exactly 5 seconds)
+    const imageCount = types.filter((t) => t === "image").length;
+    const videoCount = N - imageCount;
+
+    // Calculate duration per clip: images = 5s, videos split remaining time
+    const remainingDuration = Math.max(
+      0,
+      duration - imageCount * IMAGE_DURATION,
+    );
+    const videoDuration = videoCount > 0 ? remainingDuration / videoCount : 0;
+
     const trimmedPaths: string[] = [];
+
     for (let clipIdx = 0; clipIdx < N; clipIdx++) {
-      const rawPath = path.join(jobDir, `seg${segIdx}_clip${clipIdx}.raw.mp4`);
+      const clipType = types[clipIdx];
+      const ext = clipType === "image" ? ".jpg" : ".mp4";
+      const rawPath = path.join(
+        jobDir,
+        `seg${segIdx}_clip${clipIdx}.raw${ext}`,
+      );
       const trimmedPath = path.join(jobDir, `seg${segIdx}_clip${clipIdx}.mp4`);
+      const targetDuration =
+        clipType === "image" ? IMAGE_DURATION : videoDuration;
+
       try {
         await downloadFile(urls[clipIdx], rawPath);
 
-        // Probe actual clip duration to decide: loop vs trim vs copy
-        const actualDuration = await getVideoDuration(rawPath);
-
-        if (actualDuration > 0 && actualDuration < subDuration - DURATION_TOLERANCE) {
-          // Clip is SHORTER than target → loop seamlessly then trim to exact sub-duration
-          await loopAndTrimVideo(rawPath, trimmedPath, subDuration);
+        if (clipType === "image") {
+          await imageToVideo(rawPath, trimmedPath, IMAGE_DURATION);
         } else {
-          // Clip is LONGER or EQUAL → trim to exact sub-duration
-          // (FFmpeg -t on a clip that's already exactly the right length is a no-op)
-          await trimVideo(rawPath, trimmedPath, subDuration);
+          const actualDuration = await getVideoDuration(rawPath);
+
+          if (actualDuration > 0 && actualDuration < targetDuration - 0.1) {
+            await loopAndTrimVideo(rawPath, trimmedPath, targetDuration);
+          } else {
+            await trimVideo(rawPath, trimmedPath, targetDuration);
+          }
         }
 
         await fsp.unlink(rawPath).catch(() => {});
         trimmedPaths.push(trimmedPath);
-      } catch {
+      } catch (err) {
+        console.error(
+          `[export] FAIL: segment ${segIdx} clip ${clipIdx}: ${err}`,
+        );
         await fsp.unlink(rawPath).catch(() => {});
         await fsp.unlink(trimmedPath).catch(() => {});
       }
@@ -381,12 +607,13 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
       continue;
     }
 
-    const segOutputPath = path.join(jobDir, `segment_${String(segIdx).padStart(3, "0")}.mp4`);
+    const segOutputPath = path.join(
+      jobDir,
+      `segment_${String(segIdx).padStart(3, "0")}.mp4`,
+    );
     if (trimmedPaths.length === 1) {
-      // N=1 — single clip already trimmed, just move it
       await fsp.rename(trimmedPaths[0], segOutputPath);
     } else {
-      // N>1 — stitch trimmed clips in user-selection order
       await stitchVideos(trimmedPaths, segOutputPath, jobDir);
       for (const p of trimmedPaths) await fsp.unlink(p).catch(() => {});
     }
@@ -401,11 +628,9 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
     return;
   }
 
-  // Package each segment as a numbered file (001.mp4, 002.mp4, …) — same structure as the existing export flow
+  // Package each segment as a numbered file (001.mp4, 002.mp4, …)
   const zipId = randomUUID();
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const zipFilename = `Project_Videos_${timestamp}.zip`;
-  const zipPath = path.join(EXPORTS_DIR, zipFilename);
+  const zipPath = path.join(EXPORTS_DIR, `export_${zipId}.zip`);
 
   await new Promise<void>((resolve, reject) => {
     const output = fs.createWriteStream(zipPath);
@@ -413,7 +638,6 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
     output.on("close", resolve);
     archive.on("error", reject);
     archive.pipe(output);
-    // Add each segment file as 001.mp4, 002.mp4, … inside the same ZIP folder as the existing export
     segmentOutputPaths.forEach((segPath, i) => {
       const filename = String(i + 1).padStart(3, "0") + ".mp4";
       archive.file(segPath, { name: `${ZIP_FOLDER_NAME}/${filename}` });
@@ -442,7 +666,11 @@ async function processSegmentsExport(jobId: string, segments: ExportSegment[], o
   job.status = "done";
 }
 
-async function processExport(jobId: string, urls: string[], origin: string): Promise<void> {
+async function processExport(
+  jobId: string,
+  urls: string[],
+  origin: string,
+): Promise<void> {
   const job = jobs.get(jobId);
   if (!job) return;
 

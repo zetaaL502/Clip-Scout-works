@@ -12,12 +12,25 @@ export interface Segment {
 export interface Clip {
   id: string;
   segmentId: string;
-  source: "pexels" | "giphy" | "pixabay";
+  source: "pexels" | "giphy" | "pixabay" | "custom";
   thumbnail_url: string;
   media_url: string;
   width?: number;
   height?: number;
-  duration?: number; // seconds, Pexels/Pixabay only
+  duration?: number;
+  localPath?: string;
+  fileName?: string;
+}
+
+export interface CustomUpload {
+  id: string;
+  segmentId: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  thumbnailData?: string;
+  mediaData?: string;
+  duration?: number;
 }
 
 export interface Project {
@@ -31,7 +44,6 @@ export type Page =
   | "settings"
   | "quicksend"
   | "subtitles"
-  | "text-automation"
   | "youtube-analytics";
 
 export interface ToastItem {

@@ -7,6 +7,11 @@ import { randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
 
+const FFmpeg_PATH =
+  process.platform === "win32"
+    ? "C:\\Users\\Galaxy\\Downloads\\ffmpeg-master-latest-win64-gpl\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe"
+    : "ffmpeg";
+
 const PEXELS_TIMEOUT_MS = 15000;
 
 type PexelsVideoFile = {
@@ -18,12 +23,18 @@ type PexelsVideoFile = {
 };
 
 function isLandscape(width?: number, height?: number): boolean {
-  return typeof width === "number" && typeof height === "number" && width > height;
+  return (
+    typeof width === "number" && typeof height === "number" && width > height
+  );
 }
 
-function pickExportSafeFile(videoFiles: PexelsVideoFile[]): PexelsVideoFile | undefined {
+function pickExportSafeFile(
+  videoFiles: PexelsVideoFile[],
+): PexelsVideoFile | undefined {
   const mp4Files = videoFiles.filter((f) => f.file_type === "video/mp4");
-  const landscapeMp4Files = mp4Files.filter((f) => isLandscape(f.width, f.height));
+  const landscapeMp4Files = mp4Files.filter((f) =>
+    isLandscape(f.width, f.height),
+  );
   const widthSafe = (f: PexelsVideoFile) => !f.width || f.width <= 2000;
   const inTargetRange = (f: PexelsVideoFile) =>
     typeof f.width === "number" && f.width >= 1280 && f.width <= 1920;
@@ -39,7 +50,11 @@ function pickExportSafeFile(videoFiles: PexelsVideoFile[]): PexelsVideoFile | un
   return undefined;
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -56,7 +71,10 @@ router.post("/pexels-proxy", async (req, res) => {
     return;
   }
 
-  const { keywords, page = 1 } = req.body as { keywords?: string; page?: number };
+  const { keywords, page = 1 } = req.body as {
+    keywords?: string;
+    page?: number;
+  };
   if (!keywords || typeof keywords !== "string" || !keywords.trim()) {
     res.status(400).json({ error: "keywords is required" });
     return;
@@ -72,7 +90,10 @@ router.post("/pexels-proxy", async (req, res) => {
 
     if (!pexelsRes.ok) {
       const text = await pexelsRes.text().catch(() => "");
-      req.log.warn({ status: pexelsRes.status, body: text }, "Pexels API returned non-OK");
+      req.log.warn(
+        { status: pexelsRes.status, body: text },
+        "Pexels API returned non-OK",
+      );
       res.status(502).json({ error: `Pexels API error: ${pexelsRes.status}` });
       return;
     }
@@ -84,7 +105,13 @@ router.post("/pexels-proxy", async (req, res) => {
         duration?: number;
         width?: number;
         height?: number;
-        video_files: Array<{ quality: string; link: string; file_type: string; width?: number; height?: number }>;
+        video_files: Array<{
+          quality: string;
+          link: string;
+          file_type: string;
+          width?: number;
+          height?: number;
+        }>;
       }>;
     };
 
@@ -92,8 +119,13 @@ router.post("/pexels-proxy", async (req, res) => {
       .filter((video) => isLandscape(video.width, video.height))
       .map((video) => {
         const hdFile =
-          video.video_files.find((f) => f.quality === "hd" && f.file_type === "video/mp4") ??
-          video.video_files.find((f) => f.file_type === "video/mp4" && isLandscape(f.width, f.height)) ??
+          video.video_files.find(
+            (f) => f.quality === "hd" && f.file_type === "video/mp4",
+          ) ??
+          video.video_files.find(
+            (f) =>
+              f.file_type === "video/mp4" && isLandscape(f.width, f.height),
+          ) ??
           video.video_files.find((f) => f.file_type === "video/mp4") ??
           video.video_files[0];
         return {
@@ -122,8 +154,13 @@ router.post("/pexels-proxy", async (req, res) => {
 
 router.get("/pexels-video/:videoId", async (req, res) => {
   const apiKey = process.env["PEXELS_API_KEY"];
+  console.error(
+    `[pexels] PEXELS_API_KEY is: ${apiKey ? "SET (" + apiKey.slice(0, 8) + "...)" : "NOT SET"}`,
+  );
   if (!apiKey) {
-    res.status(502).json({ error: "PEXELS_API_KEY not configured on server" });
+    res.status(502).json({
+      error: "PEXELS_API_KEY not configured on server. Add it to .env file.",
+    });
     return;
   }
 
@@ -135,6 +172,7 @@ router.get("/pexels-video/:videoId", async (req, res) => {
 
   try {
     const url = `https://api.pexels.com/videos/videos/${encodeURIComponent(videoId)}`;
+    console.error(`[pexels] Fetching video ${videoId} from Pexels API...`);
     const pexelsRes = await fetchWithTimeout(
       url,
       { headers: { Authorization: apiKey } },
@@ -143,10 +181,17 @@ router.get("/pexels-video/:videoId", async (req, res) => {
 
     if (!pexelsRes.ok) {
       const text = await pexelsRes.text().catch(() => "");
-      req.log.warn({ status: pexelsRes.status, body: text, videoId }, "Pexels video API returned non-OK");
-      res.status(502).json({ error: `Pexels video API error: ${pexelsRes.status}` });
+      console.error(`[pexels] Pexels API error ${pexelsRes.status}: ${text}`);
+      req.log.warn(
+        { status: pexelsRes.status, body: text, videoId },
+        "Pexels video API returned non-OK",
+      );
+      res.status(502).json({
+        error: `Pexels video API error: ${pexelsRes.status} - ${text}`,
+      });
       return;
     }
+    console.error(`[pexels] Success for video ${videoId}`);
 
     const data = (await pexelsRes.json()) as {
       id: number;
@@ -184,7 +229,11 @@ function makeTmpPath(): string {
 }
 
 function cleanupTmp(path: string): void {
-  try { unlinkSync(path); } catch { /* ignore */ }
+  try {
+    unlinkSync(path);
+  } catch {
+    /* ignore */
+  }
 }
 
 // Runs FFmpeg with stdin piped from `feedFn`, output written to a temp file.
@@ -198,14 +247,23 @@ async function runFfmpegTrim(
 ): Promise<string> {
   const tmpPath = makeTmpPath();
 
-  const ffmpeg = spawn("ffmpeg", [
-    "-loglevel", "error",
-    "-i", "pipe:0",
-    "-t", String(MAX_CLIP_SECONDS),
-    "-c", "copy",
-    "-movflags", "+faststart",  // relocate moov to front; correct duration written after copy
-    tmpPath,                     // real file output — FFmpeg writes proper duration metadata
-  ], { stdio: ["pipe", "pipe", "pipe"] });
+  const ffmpeg = spawn(
+    FFmpeg_PATH,
+    [
+      "-loglevel",
+      "error",
+      "-i",
+      "pipe:0",
+      "-t",
+      String(MAX_CLIP_SECONDS),
+      "-c",
+      "copy",
+      "-movflags",
+      "+faststart", // relocate moov to front; correct duration written after copy
+      tmpPath, // real file output — FFmpeg writes proper duration metadata
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
 
   feedFn(ffmpeg.stdin);
 
@@ -239,7 +297,8 @@ function sendTmpFile(tmpPath: string, res: import("express").Response): void {
     stat = statSync(tmpPath);
   } catch {
     cleanupTmp(tmpPath);
-    if (!res.headersSent) res.status(500).json({ error: "Temp file missing after trim" });
+    if (!res.headersSent)
+      res.status(500).json({ error: "Temp file missing after trim" });
     return;
   }
 
@@ -259,7 +318,10 @@ router.post("/trim-video", async (req, res) => {
   let tmpPath: string | null = null;
   try {
     tmpPath = await runFfmpegTrim(
-      (stdin) => { req.pipe(stdin); req.on("error", () => stdin.destroy()); },
+      (stdin) => {
+        req.pipe(stdin);
+        req.on("error", () => stdin.destroy());
+      },
       (msg) => req.log.warn({ msg }, "ffmpeg trim stderr"),
       (msg) => req.log.error({ msg }, "ffmpeg trim error"),
     );
@@ -291,7 +353,7 @@ router.post("/trim-video-url", async (req, res) => {
 
   const ALLOWED_PROXY_HOSTS = ["videos.pexels.com"];
   const isAllowed = ALLOWED_PROXY_HOSTS.some(
-    (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`)
+    (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`),
   );
   if (!isAllowed) {
     res.status(403).json({ error: "URL host not allowed" });
@@ -306,9 +368,10 @@ router.post("/trim-video-url", async (req, res) => {
     const upstream = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer": "https://www.pexels.com/",
-        "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Referer: "https://www.pexels.com/",
+        Accept: "video/webm,video/mp4,video/*,*/*;q=0.9",
       },
     });
 
@@ -327,12 +390,19 @@ router.post("/trim-video-url", async (req, res) => {
           try {
             while (true) {
               const { done, value } = await reader.read();
-              if (done) { stdin.end(); break; }
+              if (done) {
+                stdin.end();
+                break;
+              }
               if (!stdin.write(value)) {
-                await new Promise<void>((resolve) => stdin.once("drain", resolve));
+                await new Promise<void>((resolve) =>
+                  stdin.once("drain", resolve),
+                );
               }
             }
-          } catch { stdin.destroy(); }
+          } catch {
+            stdin.destroy();
+          }
         })();
       },
       (msg) => req.log.warn({ msg }, "ffmpeg trim-url stderr"),
@@ -345,7 +415,9 @@ router.post("/trim-video-url", async (req, res) => {
     if (tmpPath) cleanupTmp(tmpPath);
     const isAbort = (err as Error)?.name === "AbortError";
     if (!res.headersSent) {
-      res.status(isAbort ? 504 : 502).json({ error: isAbort ? "Fetch timed out" : "Failed to fetch video" });
+      res
+        .status(isAbort ? 504 : 502)
+        .json({ error: isAbort ? "Fetch timed out" : "Failed to fetch video" });
     }
   }
 });
@@ -383,7 +455,7 @@ router.get("/video-download", async (req, res) => {
   }
 
   const isAllowed = ALLOWED_CDN_HOSTS.some(
-    (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
+    (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`),
   );
   if (!isAllowed) {
     res.status(403).json({ error: "URL host not allowed" });
@@ -403,11 +475,12 @@ router.get("/video-download", async (req, res) => {
     const upstream = await fetch(rawUrl, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer": "https://www.pexels.com/",
-        "Accept": "video/webm,video/mp4,video/*,*/*;q=0.9",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Referer: "https://www.pexels.com/",
+        Accept: "video/webm,video/mp4,video/*,*/*;q=0.9",
         "Accept-Language": "en-US,en;q=0.9",
-        "Origin": "https://www.pexels.com",
+        Origin: "https://www.pexels.com",
       },
     });
 
@@ -446,15 +519,25 @@ router.get("/video-download", async (req, res) => {
     // MP4 — trim to MAX_CLIP_SECONDS seconds using FFmpeg (stream copy, no re-encode)
     res.setHeader("Content-Type", "video/mp4");
 
-    const ffmpeg = spawn("ffmpeg", [
-      "-loglevel", "error",
-      "-i", "pipe:0",                          // read source video from stdin
-      "-t", String(MAX_CLIP_SECONDS),           // trim to 30 seconds maximum
-      "-c", "copy",                             // stream copy — no re-encoding, very fast
-      "-f", "mp4",
-      "-movflags", "frag_keyframe+empty_moov", // fragmented MP4 — streamable without seeking
-      "pipe:1",                                 // write trimmed video to stdout
-    ], { stdio: ["pipe", "pipe", "pipe"] });
+    const ffmpeg = spawn(
+      FFmpeg_PATH,
+      [
+        "-loglevel",
+        "error",
+        "-i",
+        "pipe:0", // read source video from stdin
+        "-t",
+        String(MAX_CLIP_SECONDS), // trim to 30 seconds maximum
+        "-c",
+        "copy", // stream copy — no re-encoding, very fast
+        "-f",
+        "mp4",
+        "-movflags",
+        "frag_keyframe+empty_moov", // fragmented MP4 — streamable without seeking
+        "pipe:1", // write trimmed video to stdout
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
 
     // Forward FFmpeg stdout → HTTP response
     ffmpeg.stdout.pipe(res);
@@ -471,7 +554,9 @@ router.get("/video-download", async (req, res) => {
           }
           if (!ffmpeg.stdin.write(value)) {
             // Respect backpressure
-            await new Promise<void>((resolve) => ffmpeg.stdin.once("drain", resolve));
+            await new Promise<void>((resolve) =>
+              ffmpeg.stdin.once("drain", resolve),
+            );
           }
         }
       } catch {
@@ -491,7 +576,6 @@ router.get("/video-download", async (req, res) => {
 
     // Wait for FFmpeg to finish before logging completion
     await new Promise<void>((resolve) => ffmpeg.on("close", resolve));
-
   } catch (err) {
     const isAbort = (err as Error)?.name === "AbortError";
     if (!res.headersSent) {

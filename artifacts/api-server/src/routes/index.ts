@@ -8,6 +8,8 @@ import transfersRouter from "./transfers";
 import subtitlesRouter from "./subtitles";
 import timestampsRouter from "./timestamps";
 import competitorsRouter from "./competitors";
+import uploadsRouter from "./uploads";
+import geminiRouter from "./gemini";
 import {
   voicesRouter,
   previewVoiceRouter,
@@ -34,6 +36,8 @@ router.use(transfersRouter);
 router.use(subtitlesRouter);
 router.use(timestampsRouter);
 router.use("/competitors", competitorsRouter);
+router.use(uploadsRouter);
+router.use(geminiRouter);
 router.use(voicesRouter);
 router.use(previewVoiceRouter);
 router.use(audioGenerationRouter);

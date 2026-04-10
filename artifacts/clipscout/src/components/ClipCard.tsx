@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, memo } from 'react';
-import { Check, Play, Pause, SquareCheck } from 'lucide-react';
-import type { Clip } from '../types';
-import { storage } from '../storage';
-import { usePlaying } from '../context/PlayingContext';
+import { useState, useRef, useEffect, memo } from "react";
+import { Check, Play, Pause, SquareCheck } from "lucide-react";
+import type { Clip } from "../types";
+import { storage } from "../storage";
+import { usePlaying } from "../context/PlayingContext";
 
 interface Props {
   clip: Clip;
@@ -14,14 +14,22 @@ interface Props {
   onSelectionChange: (nextSelections?: string[]) => void;
 }
 
-function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentIndex, clipIndex, onSelectionChange }: Props) {
+function ClipCardImpl({
+  clip,
+  isSelected,
+  animIndex,
+  bulkSelectNonce,
+  segmentIndex,
+  clipIndex,
+  onSelectionChange,
+}: Props) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showMedia, setShowMedia] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { playingId, setPlayingId } = usePlaying();
-  const isGif = clip.source === 'giphy';
+  const isGif = clip.source === "giphy";
 
   // Only cascade when Select All is clicked (bulkSelectNonce changes).
   const lastBulkSelectNonceRef = useRef<number>(bulkSelectNonce);
@@ -32,7 +40,10 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
 
   // Stagger delay: applied when selecting as part of bulk-select.
   // 40ms per card fits the 30-50ms requirement while staying fast.
-  const staggerDelay = isSelected && cascadeEnabled ? `${Math.min(animIndex * 40, 2000)}ms` : '0ms';
+  const staggerDelay =
+    isSelected && cascadeEnabled
+      ? `${Math.min(animIndex * 40, 2000)}ms`
+      : "0ms";
 
   // When a different clip starts playing, stop this one
   useEffect(() => {
@@ -84,12 +95,12 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
   return (
     <div
       className={`relative rounded-lg overflow-hidden bg-gray-800 aspect-video group border-4 transition-colors ${
-        isSelected ? 'border-green-500' : 'border-transparent'
+        isSelected ? "border-green-500" : "border-transparent"
       }`}
       style={{
-        minHeight: '44px',
-        minWidth: '44px',
-        transition: 'border-color 180ms ease',
+        minHeight: "44px",
+        minWidth: "44px",
+        transition: "border-color 180ms ease",
         transitionDelay: staggerDelay,
       }}
     >
@@ -103,7 +114,7 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
           alt=""
           loading="lazy"
           decoding="async"
-          className={`w-full h-full object-contain bg-black transition-opacity ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`w-full h-full object-contain bg-black transition-opacity ${imgLoaded ? "opacity-100" : "opacity-0"}`}
           onLoad={() => setImgLoaded(true)}
           onError={() => setImgError(true)}
         />
@@ -142,7 +153,7 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
       <button
         onClick={handlePlayPause}
         className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors focus:outline-none"
-        aria-label={isPlaying ? 'Pause' : 'Play'}
+        aria-label={isPlaying ? "Pause" : "Play"}
       >
         <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
           {isPlaying ? (
@@ -153,12 +164,15 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
         </div>
       </button>
 
-      {/* Duration badge (Pexels only) */}
-      {!isGif && typeof clip.duration === 'number' && (
-        <div className="absolute top-1.5 left-1.5 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded font-medium pointer-events-none">
-          {clip.duration}s
-        </div>
-      )}
+      {/* Duration badge (videos only, not GIFs or images) */}
+      {!isGif &&
+        typeof clip.duration === "number" &&
+        clip.duration > 0 &&
+        !clip.thumbnail_url?.startsWith("data:image") && (
+          <div className="absolute top-1.5 left-1.5 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded font-medium pointer-events-none">
+            {clip.duration}s
+          </div>
+        )}
 
       {/* GIF label */}
       {isGif && (
@@ -167,19 +181,28 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
         </div>
       )}
 
+      {/* Image label for custom images */}
+      {!isGif &&
+        clip.source === "custom" &&
+        clip.thumbnail_url?.startsWith("data:image") && (
+          <div className="absolute top-1.5 left-1.5 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded font-medium pointer-events-none">
+            IMAGE
+          </div>
+        )}
+
       {/* Select button — bottom bar */}
       <button
         onClick={handleSelect}
         className={`absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1 py-1 text-xs font-semibold ${
           isSelected
-            ? 'bg-[#22c55e] text-white'
-            : 'bg-black/60 text-gray-300 hover:bg-black/80 hover:text-white'
+            ? "bg-[#22c55e] text-white"
+            : "bg-black/60 text-gray-300 hover:bg-black/80 hover:text-white"
         }`}
         style={{
-          transition: 'background-color 180ms ease',
+          transition: "background-color 180ms ease",
           transitionDelay: staggerDelay,
         }}
-        aria-label={isSelected ? 'Deselect clip' : 'Select clip'}
+        aria-label={isSelected ? "Deselect clip" : "Select clip"}
       >
         {isSelected ? (
           <>
@@ -199,8 +222,8 @@ function ClipCardImpl({ clip, isSelected, animIndex, bulkSelectNonce, segmentInd
         className="absolute top-1.5 right-1.5 w-5 h-5 bg-[#22c55e] rounded-full flex items-center justify-center shadow pointer-events-none"
         style={{
           opacity: isSelected ? 1 : 0,
-          transform: isSelected ? 'scale(1)' : 'scale(0.5)',
-          transition: 'opacity 180ms ease, transform 180ms ease',
+          transform: isSelected ? "scale(1)" : "scale(0.5)",
+          transition: "opacity 180ms ease, transform 180ms ease",
           transitionDelay: staggerDelay,
         }}
       >

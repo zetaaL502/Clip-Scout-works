@@ -1,11 +1,4 @@
-import {
-  Film,
-  Send,
-  Mic,
-  MessageSquareText,
-  BarChart3,
-  Settings,
-} from "lucide-react";
+import { Film, Send, Mic, BarChart3, Settings } from "lucide-react";
 import type { Page } from "../types";
 
 interface Props {
@@ -15,15 +8,14 @@ interface Props {
 }
 
 const navItems = [
-  { id: "home" as Page, label: "Video Studio", icon: Film },
+  { id: "grid" as Page, label: "Video Studio", icon: Film },
   { id: "quicksend" as Page, label: "Quick Send", icon: Send },
   { id: "subtitles" as Page, label: "Subtitles", icon: Mic },
-  { id: "text-automation" as Page, label: "Text", icon: MessageSquareText },
   { id: "youtube-analytics" as Page, label: "YouTube", icon: BarChart3 },
 ];
 
 export function AppSidebar({ currentPage, onNavigate }: Props) {
-  const activePage = currentPage === "grid" ? "home" : currentPage;
+  const activePage = currentPage;
 
   return (
     <>
