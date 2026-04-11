@@ -51,8 +51,9 @@ export function ServerExportModal({ state, onUpdate, onClose }: Props) {
         esRef.current = null;
         retryCountRef.current++;
 
-        // After 3 retries, give up and show error
-        if (retryCountRef.current >= 3) {
+        // The Replit proxy drops SSE connections every ~800ms, so we need many
+        // retries. Give up only after 90 failed reconnections (~3 minutes).
+        if (retryCountRef.current >= 90) {
           onUpdate({
             status: "error",
             error: "Connection lost. Please try again.",
