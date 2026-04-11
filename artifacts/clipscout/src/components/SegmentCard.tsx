@@ -214,6 +214,16 @@ export function SegmentCard({
   const loadInitialClips = useCallback(async () => {
     if (loadedRef.current) return;
     loadedRef.current = true;
+
+    // If clips are already cached in storage, use them directly — no fetch needed.
+    // This is critical: storage is the source of truth for clip indices used during export.
+    const alreadyCached = storage.getSegmentClips(segment.id);
+    if (alreadyCached.length > 0) {
+      setClips(alreadyCached);
+      setLoadingInitial(false);
+      return;
+    }
+
     setLoadingInitial(true);
 
     const controller = new AbortController();
@@ -245,8 +255,10 @@ export function SegmentCard({
       clearTimeout(hardTimeout);
       if (!controller.signal.aborted) {
         if (newClips.length > 0) {
-          storage.addClips(segment.id, newClips);
-          setClips(newClips);
+          // addClips filters out non-horizontal Pexels clips before storing.
+          // Use the stored result for setClips so UI indices always match storage indices.
+          const stored = storage.addClips(segment.id, newClips);
+          setClips(stored[segment.id] ?? []);
         }
         setLoadingInitial(false);
       }
@@ -335,8 +347,9 @@ export function SegmentCard({
       clearTimeout(timeoutId);
       if (!timedOut) {
         if (newClips.length > 0) {
-          storage.addClips(segment.id, newClips);
-          setClips((prev) => [...prev, ...newClips]);
+          // Use the stored result so UI indices always match storage indices.
+          const stored = storage.addClips(segment.id, newClips);
+          setClips(stored[segment.id] ?? []);
         } else {
           setLoadMoreError(true);
         }
@@ -384,8 +397,9 @@ export function SegmentCard({
       }
       manualPageRef.current += 1;
       if (newClips.length > 0) {
-        storage.addClips(segment.id, newClips);
-        setClips((prev) => [...prev, ...newClips]);
+        // Use the stored result so UI indices always match storage indices.
+        const stored = storage.addClips(segment.id, newClips);
+        setClips(stored[segment.id] ?? []);
       } else {
         addToast("info", "No clips found for that keyword.");
       }

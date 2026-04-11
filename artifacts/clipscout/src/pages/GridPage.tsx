@@ -267,9 +267,12 @@ export function GridPage({ onBack, onSettings }: Props) {
           };
           const clips = await fetchPexelsClips(segWithFirstKeyword, 1);
           if (clips.length > 0) {
-            storage.addClips(seg.id, clips);
+            // addClips filters clips and returns the full stored array.
+            // Use the stored result so preloadedClips indices match storage indices.
+            const stored = storage.addClips(seg.id, clips);
+            return { id: seg.id, clips: stored[seg.id] ?? [] };
           }
-          return { id: seg.id, clips };
+          return { id: seg.id, clips: [] };
         } catch {
           return { id: seg.id, clips: [] };
         }
@@ -311,9 +314,11 @@ export function GridPage({ onBack, onSettings }: Props) {
               };
               const clips = await fetchPexelsClips(segWithFirstKeyword, 1);
               if (clips.length > 0) {
-                storage.addClips(seg.id, clips);
+                // Use the stored (filtered) result so indices match storage.
+                const stored = storage.addClips(seg.id, clips);
+                return { id: seg.id, clips: stored[seg.id] ?? [] };
               }
-              return { id: seg.id, clips };
+              return { id: seg.id, clips: [] as Clip[] };
             } catch {
               return { id: seg.id, clips: [] as Clip[] };
             }
@@ -597,7 +602,14 @@ export function GridPage({ onBack, onSettings }: Props) {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           blob = await res.blob();
         } else {
-          const cdnUrl = await resolvePexelsCdnUrl(clip);
+          // Pexels: re-fetch the best CDN URL (higher quality than stored media_url).
+          // Pixabay / other sources: media_url is already the direct download URL.
+          let cdnUrl: string | null = null;
+          if (clip.source === "pexels") {
+            cdnUrl = await resolvePexelsCdnUrl(clip);
+          } else {
+            cdnUrl = clip.media_url || null;
+          }
           if (!cdnUrl) throw new Error("No CDN URL");
           const res = await fetch(cdnUrl);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
