@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Plus, ChevronDown, Search } from "lucide-react";
+import { Plus, ChevronDown, Search, Trash2 } from "lucide-react";
 import { ClipCard } from "./ClipCard";
 import { storage } from "../storage";
 import { fetchPexelsClips, fetchGiphyClips, fetchPixabayClips } from "../api";
@@ -63,6 +63,16 @@ export function SegmentCard({
   const [loadingManual, setLoadingManual] = useState(false);
   const manualPageRef = useRef(1);
   const [textExpanded, setTextExpanded] = useState(false);
+
+  // Track clips added by "Add 4 More" using clip IDs
+  const [add4MoreClipIds, setAdd4MoreClipIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // Track manual search groups: each group = { keyword, source, clipIds }
+  const [searchGroups, setSearchGroups] = useState<
+    { keyword: string; source: string; clipIds: Set<string> }[]
+  >([]);
 
   const suggestedKeywords = useMemo(() => {
     const STOPWORDS = new Set([
@@ -349,7 +359,11 @@ export function SegmentCard({
         if (newClips.length > 0) {
           // Use the stored result so UI indices always match storage indices.
           const stored = storage.addClips(segment.id, newClips);
-          setClips(stored[segment.id] ?? []);
+          const updatedClips = stored[segment.id] ?? [];
+          setClips(updatedClips);
+          // Track the new clip IDs for delete button
+          const newIds = new Set(newClips.map((c) => c.id));
+          setAdd4MoreClipIds((prev) => new Set([...prev, ...newIds]));
         } else {
           setLoadMoreError(true);
         }
@@ -399,7 +413,14 @@ export function SegmentCard({
       if (newClips.length > 0) {
         // Use the stored result so UI indices always match storage indices.
         const stored = storage.addClips(segment.id, newClips);
-        setClips(stored[segment.id] ?? []);
+        const updatedClips = stored[segment.id] ?? [];
+        setClips(updatedClips);
+        // Track the new clip IDs for delete button
+        const newIds = new Set(newClips.map((c) => c.id));
+        setSearchGroups((prev) => [
+          ...prev,
+          { keyword: query, source: manualSource, clipIds: newIds },
+        ]);
       } else {
         addToast("info", "No clips found for that keyword.");
       }
@@ -418,6 +439,29 @@ export function SegmentCard({
       manualPageRef.current = 1;
       handleManualSearch();
     }
+  }
+
+  // Delete all "Add 4 More" clips
+  function deleteAdd4MoreClips() {
+    if (add4MoreClipIds.size === 0) return;
+    const currentClips = storage.getSegmentClips(segment.id);
+    const toKeep = currentClips.filter((c) => !add4MoreClipIds.has(c.id));
+    const newMap = { ...storage.getClips(), [segment.id]: toKeep };
+    storage.setClips(newMap);
+    setClips(toKeep);
+    setAdd4MoreClipIds(new Set());
+  }
+
+  // Delete a search group
+  function deleteSearchGroup(groupIndex: number) {
+    const group = searchGroups[groupIndex];
+    if (!group) return;
+    const currentClips = storage.getSegmentClips(segment.id);
+    const toKeep = currentClips.filter((c) => !group.clipIds.has(c.id));
+    const newMap = { ...storage.getClips(), [segment.id]: toKeep };
+    storage.setClips(newMap);
+    setClips(toKeep);
+    setSearchGroups((prev) => prev.filter((_, i) => i !== groupIndex));
   }
 
   const skeletons = Array.from({ length: 4 });
@@ -546,7 +590,37 @@ export function SegmentCard({
             </div>
           )}
         </div>
+
+        {/* Delete Add 4 More clips button */}
+        {add4MoreClipIds.size > 0 && (
+          <button
+            onClick={deleteAdd4MoreClips}
+            className="flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-900/20 shrink-0"
+            title={`Delete ${add4MoreClipIds.size} Add 4 More clips`}
+          >
+            <Trash2 size={14} />
+            <span>Delete</span>
+          </button>
+        )}
       </div>
+
+      {/* Search groups delete buttons */}
+      {searchGroups.length > 0 && (
+        <div className="px-4 py-2 sm:px-6 border-b border-gray-800 flex items-center gap-2 flex-wrap">
+          {searchGroups.map((group, i) => (
+            <button
+              key={i}
+              onClick={() => deleteSearchGroup(i)}
+              className="flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 transition-colors px-2.5 py-1.5 rounded-lg bg-red-900/20 hover:bg-red-900/30 border border-red-900/50"
+            >
+              <Trash2 size={12} />
+              <span>
+                Delete "{group.keyword}" ({group.clipIds.size})
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Clips grid */}
       <div className="p-4 sm:p-6">

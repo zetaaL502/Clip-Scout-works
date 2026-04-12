@@ -13,26 +13,209 @@ function timeToSeconds(ts: string): number {
 }
 
 const STOPWORDS = new Set([
-  "the","a","an","and","or","but","in","on","at","to","for","of","with","by","from",
-  "is","it","its","be","are","was","were","been","has","have","had","do","did","does",
-  "will","would","could","should","may","might","this","that","these","those","i","you",
-  "he","she","we","they","my","your","his","her","our","their","what","when","where",
-  "how","why","who","which","as","if","so","not","no","can","just","about","up","out",
-  "there","then","than","into","through","after","before","over","under","between","very",
-  "more","most","also","some","all","any","each","every","both","get","got","go","going",
-  "know","think","see","look","like","make","take","come","want","need","tell","say",
-  "said","one","two","three","four","five","six","seven","eight","nine","ten","us","me",
-  "him","them","here","now","only","even","still","back","much","well","way","time",
-  "thing","things","people","really","actually","basically","literally","right","okay",
-  "yeah","yes","lot","lots","kind","sort","re","ve","ll","don","didn","doesn","isn",
-  "aren","wasn","weren","hadn","hasn","haven","wouldn","couldn","shouldn","let","let's",
-  "i'm","i've","i'll","i'd","that's","it's","he's","she's","we're","they're","you're",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "with",
+  "by",
+  "from",
+  "is",
+  "it",
+  "its",
+  "be",
+  "are",
+  "was",
+  "were",
+  "been",
+  "has",
+  "have",
+  "had",
+  "do",
+  "did",
+  "does",
+  "will",
+  "would",
+  "could",
+  "should",
+  "may",
+  "might",
+  "this",
+  "that",
+  "these",
+  "those",
+  "i",
+  "you",
+  "he",
+  "she",
+  "we",
+  "they",
+  "my",
+  "your",
+  "his",
+  "her",
+  "our",
+  "their",
+  "what",
+  "when",
+  "where",
+  "how",
+  "why",
+  "who",
+  "which",
+  "as",
+  "if",
+  "so",
+  "not",
+  "no",
+  "can",
+  "just",
+  "about",
+  "up",
+  "out",
+  "there",
+  "then",
+  "than",
+  "into",
+  "through",
+  "after",
+  "before",
+  "over",
+  "under",
+  "between",
+  "very",
+  "more",
+  "most",
+  "also",
+  "some",
+  "all",
+  "any",
+  "each",
+  "every",
+  "both",
+  "get",
+  "got",
+  "go",
+  "going",
+  "know",
+  "think",
+  "see",
+  "look",
+  "like",
+  "make",
+  "take",
+  "come",
+  "want",
+  "need",
+  "tell",
+  "say",
+  "said",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "us",
+  "me",
+  "him",
+  "them",
+  "here",
+  "now",
+  "only",
+  "even",
+  "still",
+  "back",
+  "much",
+  "well",
+  "way",
+  "time",
+  "thing",
+  "things",
+  "people",
+  "really",
+  "actually",
+  "basically",
+  "literally",
+  "right",
+  "okay",
+  "yeah",
+  "yes",
+  "lot",
+  "lots",
+  "kind",
+  "sort",
+  "re",
+  "ve",
+  "ll",
+  "don",
+  "didn",
+  "doesn",
+  "isn",
+  "aren",
+  "wasn",
+  "weren",
+  "hadn",
+  "hasn",
+  "haven",
+  "wouldn",
+  "couldn",
+  "shouldn",
+  "let",
+  "let's",
+  "i'm",
+  "i've",
+  "i'll",
+  "i'd",
+  "that's",
+  "it's",
+  "he's",
+  "she's",
+  "we're",
+  "they're",
+  "you're",
 ]);
 
 function extractSmartKeywords(text: string): string {
   // 1. Find proper nouns (capitalized words mid-sentence, likely names/places)
-  const properNouns = (text.match(/\b[A-Z][a-z]{2,}\b/g) ?? [])
-    .filter((w) => !["The","A","An","And","Or","But","In","On","At","To","For","Of","With","This","That","I","You","He","She","We","They"].includes(w));
+  const properNouns = (text.match(/\b[A-Z][a-z]{2,}\b/g) ?? []).filter(
+    (w) =>
+      ![
+        "The",
+        "A",
+        "An",
+        "And",
+        "Or",
+        "But",
+        "In",
+        "On",
+        "At",
+        "To",
+        "For",
+        "Of",
+        "With",
+        "This",
+        "That",
+        "I",
+        "You",
+        "He",
+        "She",
+        "We",
+        "They",
+      ].includes(w),
+  );
 
   // 2. Find multi-word capitalized phrases (e.g. "Dubai Marina", "Ferrari", "Burj Khalifa")
   const phrases: string[] = [];
@@ -69,21 +252,33 @@ function extractSmartKeywords(text: string): string {
 
   for (const phrase of phrases.slice(0, 2)) {
     const lp = phrase.toLowerCase();
-    if (!seen.has(lp)) { seen.add(lp); keywords.push(phrase); }
+    if (!seen.has(lp)) {
+      seen.add(lp);
+      keywords.push(phrase);
+    }
   }
 
   for (const pn of properNouns) {
     const lp = pn.toLowerCase();
-    if (!seen.has(lp) && keywords.length < 4) { seen.add(lp); keywords.push(pn); }
+    if (!seen.has(lp) && keywords.length < 4) {
+      seen.add(lp);
+      keywords.push(pn);
+    }
   }
 
   for (const w of topWords) {
-    if (!seen.has(w) && keywords.length < 4) { seen.add(w); keywords.push(w); }
+    if (!seen.has(w) && keywords.length < 4) {
+      seen.add(w);
+      keywords.push(w);
+    }
   }
 
   // Fallback: take the first few meaningful words if nothing found
   if (keywords.length === 0) {
-    const fallback = text.split(/\s+/).filter((w) => w.length > 3 && !STOPWORDS.has(w.toLowerCase())).slice(0, 3);
+    const fallback = text
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !STOPWORDS.has(w.toLowerCase()))
+      .slice(0, 3);
     keywords.push(...fallback);
   }
 
@@ -96,7 +291,7 @@ interface RawBlock {
   text: string;
 }
 
-const SEGMENT_DURATION = 30; // seconds per segment
+const SEGMENT_DURATION = 60; // seconds per segment
 
 router.post("/parse-timestamps", (req, res) => {
   const { text } = req.body as { text?: string };
@@ -107,14 +302,18 @@ router.post("/parse-timestamps", (req, res) => {
   }
 
   // Match SRT timestamp blocks
-  const blockPattern = /(\d{2}:\d{2}:\d{2}[,.:]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.:]\d{3})\s*\n([\s\S]*?)(?=\n\s*\n\d|\n\d{2}:\d{2}:\d{2}|$)/gm;
+  const blockPattern =
+    /(\d{2}:\d{2}:\d{2}[,.:]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.:]\d{3})\s*\n([\s\S]*?)(?=\n\s*\n\d|\n\d{2}:\d{2}:\d{2}|$)/gm;
 
   const rawBlocks: RawBlock[] = [];
   let match: RegExpExecArray | null;
   while ((match = blockPattern.exec(text)) !== null) {
     const start = timeToSeconds(match[1] ?? "");
     const end = timeToSeconds(match[2] ?? "");
-    const blockText = (match[3] ?? "").trim().replace(/\n/g, " ").replace(/\s+/g, " ");
+    const blockText = (match[3] ?? "")
+      .trim()
+      .replace(/\n/g, " ")
+      .replace(/\s+/g, " ");
     if (blockText && end > start) {
       rawBlocks.push({ start, end, text: blockText });
     }
@@ -122,7 +321,8 @@ router.post("/parse-timestamps", (req, res) => {
 
   if (rawBlocks.length === 0) {
     res.status(422).json({
-      error: "No valid timestamp blocks found. Make sure your text uses SRT format (00:00:00,000 --> 00:00:00,000).",
+      error:
+        "No valid timestamp blocks found. Make sure your text uses SRT format (00:00:00,000 --> 00:00:00,000).",
     });
     return;
   }
@@ -133,7 +333,11 @@ router.post("/parse-timestamps", (req, res) => {
   // Redistribute into 30-second segments
   // For each 30s window, collect text from blocks that overlap with that window
   const numSegments = Math.max(1, Math.ceil(totalDuration / SEGMENT_DURATION));
-  const redistributed: Array<{ startSec: number; endSec: number; text: string }> = [];
+  const redistributed: Array<{
+    startSec: number;
+    endSec: number;
+    text: string;
+  }> = [];
 
   for (let seg = 0; seg < numSegments; seg++) {
     const segStart = seg * SEGMENT_DURATION;
@@ -145,7 +349,8 @@ router.post("/parse-timestamps", (req, res) => {
         // If block spans multiple segments, only include proportional words
         const overlapStart = Math.max(block.start, segStart);
         const overlapEnd = Math.min(block.end, segEnd);
-        const overlapFraction = (overlapEnd - overlapStart) / (block.end - block.start);
+        const overlapFraction =
+          (overlapEnd - overlapStart) / (block.end - block.start);
         if (overlapFraction >= 0.5) return block.text;
         // Partial block: include a proportional slice of words
         const words = block.text.split(" ");
@@ -163,7 +368,11 @@ router.post("/parse-timestamps", (req, res) => {
   }
 
   if (redistributed.length === 0) {
-    res.status(422).json({ error: "Could not redistribute timestamp blocks into segments." });
+    res
+      .status(422)
+      .json({
+        error: "Could not redistribute timestamp blocks into segments.",
+      });
     return;
   }
 

@@ -21,7 +21,9 @@ export function AppSidebar({ currentPage, onNavigate }: Props) {
     <>
       <aside className="hidden md:flex fixed left-0 top-0 bottom-0 z-40 flex-col w-48 bg-[#0d0d0d] border-r border-gray-800">
         <div className="flex items-center justify-start gap-2 px-4 h-14 border-b border-gray-800">
-          <span className="font-black text-white text-base">ClipScout</span>
+          <span className="font-black text-yellow-400 text-base">
+            ClipScout
+          </span>
         </div>
 
         <nav className="flex flex-col gap-1 p-2 flex-1">

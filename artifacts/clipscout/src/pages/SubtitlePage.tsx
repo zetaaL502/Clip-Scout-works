@@ -260,7 +260,7 @@ export function SubtitlePage() {
         };
       });
       setStage("done");
-      setShowQr(true);
+      setShowDownloadChoice(true);
     } catch (err) {
       setProc((prev) =>
         prev
@@ -274,11 +274,28 @@ export function SubtitlePage() {
     }
   };
 
+  const [showDownloadChoice, setShowDownloadChoice] = useState(false);
+
   const reset = () => {
     setEntries([]);
     setStage("setup");
     setProc(null);
     setShowQr(false);
+    setShowDownloadChoice(false);
+  };
+
+  const downloadAllToPC = () => {
+    results.forEach((r, i) => {
+      setTimeout(() => {
+        const link = document.createElement("a");
+        link.href = `${window.location.origin}${r.downloadUrl}`;
+        link.download = r.srtFileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }, i * 300);
+    });
+    setShowDownloadChoice(false);
   };
 
   const results = proc?.results ?? [];
@@ -582,17 +599,63 @@ export function SubtitlePage() {
                 ))}
               </div>
 
-              {/* Reopen QR button */}
+              {/* Show options again */}
               <button
-                onClick={() => setShowQr(true)}
+                onClick={() => setShowDownloadChoice(true)}
                 className="w-full py-3 rounded-2xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors text-sm font-medium"
               >
-                Show QR code again
+                Send another way
               </button>
             </>
           )}
         </div>
       </div>
+
+      {/* Download choice popup */}
+      {showDownloadChoice && results.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setShowDownloadChoice(false)}
+        >
+          <div
+            className="bg-[#111] rounded-2xl p-6 flex flex-col items-center gap-5 shadow-2xl border border-gray-800 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CheckCircle size={40} className="text-[#22c55e]" />
+            <p className="font-bold text-lg text-center">
+              {results.length} SRT file{results.length !== 1 ? "s" : ""} ready!
+            </p>
+            <p className="text-gray-400 text-sm text-center">
+              How do you want to receive your files?
+            </p>
+            <div className="flex flex-col gap-3 w-full">
+              <button
+                onClick={() => {
+                  setShowDownloadChoice(false);
+                  setShowQr(true);
+                }}
+                className="w-full py-4 rounded-xl bg-[#111] border border-gray-700 text-white font-semibold hover:bg-[#1a1a1a] transition-colors flex items-center justify-center gap-2"
+              >
+                <QRCodeSVG value="qr" size={18} />
+                Send via QR Code
+              </button>
+              <button
+                onClick={downloadAllToPC}
+                className="w-full py-4 rounded-xl bg-[#22c55e] text-black font-semibold hover:bg-[#16a34a] transition-colors flex items-center justify-center gap-2"
+              >
+                <Download size={18} />
+                Download to PC
+              </button>
+            </div>
+            <button
+              onClick={() => setShowDownloadChoice(false)}
+              className="text-gray-500 hover:text-white text-sm transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* QR popup modal */}
       {showQr && qrPageUrl && (
