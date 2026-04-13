@@ -25,6 +25,11 @@ const FFmpeg_PATH =
     ? "C:\\Users\\Galaxy\\Downloads\\ffmpeg-master-latest-win64-gpl\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe"
     : "ffmpeg";
 
+const FFprobe_PATH =
+  process.platform === "win32"
+    ? "C:\\Users\\Galaxy\\Downloads\\ffmpeg-master-latest-win64-gpl\\ffmpeg-master-latest-win64-gpl\\bin\\ffprobe.exe"
+    : "ffprobe";
+
 type JobStatus = "processing" | "done" | "error";
 
 interface Job {
@@ -348,7 +353,7 @@ function getVideoDuration(filePath: string): Promise<number> {
       });
 
     const ffmpeg = spawn(
-      FFmpeg_PATH,
+      FFprobe_PATH,
       [
         "-v",
         "error",

@@ -102,7 +102,15 @@ export const storage = {
   addClips: (segmentId: string, newClips: Clip[]) => {
     const all = storage.getClips();
     const sanitizedNew = newClips.filter(keepHorizontalClip);
-    all[segmentId] = [...(all[segmentId] ?? []), ...sanitizedNew];
+    all[segmentId] = [
+      ...(all[segmentId] ?? []),
+      ...sanitizedNew.filter(
+        (newClip) =>
+          !(all[segmentId] ?? []).some(
+            (existingClip) => existingClip.id === newClip.id,
+          ),
+      ),
+    ];
     set(KEYS.CLIPS, all);
     return all;
   },
