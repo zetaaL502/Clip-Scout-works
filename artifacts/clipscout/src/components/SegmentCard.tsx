@@ -449,6 +449,38 @@ export function SegmentCard({
     }
   }
 
+  function syncSelectionsAfterClipMutation(nextClips: Clip[]) {
+    const currentSelections = Array.from(selectedSet);
+    const selectedClipIds = new Set<string>();
+    const currentClips = storage.getSegmentClips(segment.id);
+
+    // Track which clip IDs were selected in this segment before mutation.
+    for (const key of currentSelections) {
+      const parts = key.split("_");
+      const segIdx = parseInt(parts[1] ?? "-1", 10);
+      const clipIdx = parseInt(parts[3] ?? "-1", 10);
+      if (segIdx !== index || clipIdx < 0) continue;
+      const selectedClip = currentClips[clipIdx];
+      if (selectedClip) selectedClipIds.add(selectedClip.id);
+    }
+
+    // Keep selections from other segments untouched.
+    const preserved = currentSelections.filter((key) => {
+      const parts = key.split("_");
+      const segIdx = parseInt(parts[1] ?? "-1", 10);
+      return segIdx !== index;
+    });
+
+    // Rebuild this segment's selections against the new indices.
+    nextClips.forEach((clip, clipIdx) => {
+      if (selectedClipIds.has(clip.id)) {
+        preserved.push(`segment_${index}_clip_${clipIdx}`);
+      }
+    });
+
+    onSelectionChange(preserved);
+  }
+
   // Delete all "Add 4 More" clips
   function deleteAdd4MoreClips() {
     if (add4MoreClipIds.size === 0) return;
@@ -457,6 +489,7 @@ export function SegmentCard({
     const newMap = { ...storage.getClips(), [segment.id]: toKeep };
     storage.setClips(newMap);
     setClips(toKeep);
+    syncSelectionsAfterClipMutation(toKeep);
     setAdd4MoreClipIds(new Set());
   }
 
@@ -469,6 +502,7 @@ export function SegmentCard({
     const newMap = { ...storage.getClips(), [segment.id]: toKeep };
     storage.setClips(newMap);
     setClips(toKeep);
+    syncSelectionsAfterClipMutation(toKeep);
     setSearchGroups((prev) => prev.filter((_, i) => i !== groupIndex));
   }
 
@@ -591,14 +625,14 @@ export function SegmentCard({
       </div>
 
       {/* Single control bar: search LEFT, Add 4 More RIGHT */}
-      <div className="px-4 py-2 sm:px-6 border-b border-gray-800 flex items-center gap-2">
+      <div className="px-4 py-2 sm:px-6 border-b border-gray-800 flex items-center flex-wrap sm:flex-nowrap gap-2">
         {/* Source pills */}
-        <div className="flex rounded-lg overflow-hidden border border-gray-700 text-xs shrink-0">
+        <div className="order-1 sm:order-none flex rounded-lg overflow-hidden border border-gray-700 text-xs shrink-0">
           {(["pexels", "pixabay", "giphy"] as ManualSource[]).map((src) => (
             <button
               key={src}
               onClick={() => setManualSource(src)}
-              className={`px-2.5 py-1.5 capitalize transition-colors ${
+              className={`px-3 py-2 sm:px-2.5 sm:py-1.5 capitalize transition-colors ${
                 manualSource === src
                   ? "bg-gray-700 text-white font-medium"
                   : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
@@ -619,7 +653,7 @@ export function SegmentCard({
           }}
           onKeyDown={handleManualKeyDown}
           placeholder="Type your own keyword..."
-          className="flex-1 bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-gray-500 min-w-0"
+          className="order-5 sm:order-none basis-full sm:basis-auto flex-1 bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-2.5 sm:px-3 sm:py-1.5 text-sm sm:text-xs text-white placeholder-gray-600 focus:outline-none focus:border-gray-500 min-w-0"
         />
 
         {/* Search button */}
@@ -629,17 +663,17 @@ export function SegmentCard({
             handleManualSearch();
           }}
           disabled={loadingManual || !manualKeyword.trim()}
-          className="flex items-center gap-1.5 text-xs font-medium text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 border border-gray-700 shrink-0"
+          className="order-6 sm:order-none basis-full sm:basis-auto justify-center sm:justify-start flex items-center gap-1.5 text-sm sm:text-xs font-medium text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-4 py-2 sm:px-3 sm:py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 border border-gray-700 shrink-0 min-h-[44px] sm:min-h-0 min-w-[96px] sm:min-w-0"
         >
           {loadingManual ? "Searching…" : "Search"}
           <Search size={12} />
         </button>
 
         {/* Divider */}
-        <div className="h-5 w-px bg-gray-700 shrink-0" />
+        <div className="hidden sm:block h-5 w-px bg-gray-700 shrink-0" />
 
         {/* Add 4 More */}
-        <div className="relative shrink-0" ref={dropdownRef}>
+        <div className="order-2 sm:order-none relative shrink-0" ref={dropdownRef}>
           <button
             disabled={cooldown > 0 || loadingMore}
             onClick={() => {
@@ -685,7 +719,7 @@ export function SegmentCard({
         {add4MoreClipIds.size > 0 && (
           <button
             onClick={deleteAdd4MoreClips}
-            className="flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-900/20 shrink-0"
+            className="order-3 sm:order-none flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-900/20 shrink-0"
             title={`Delete ${add4MoreClipIds.size} Add 4 More clips`}
           >
             <Trash2 size={14} />
@@ -694,13 +728,13 @@ export function SegmentCard({
         )}
 
         {/* Divider */}
-        <div className="h-5 w-px bg-gray-700 shrink-0" />
+        <div className="hidden sm:block h-5 w-px bg-gray-700 shrink-0" />
 
         {/* Image upload button */}
         <button
           onClick={handleImageUploadClick}
           disabled={uploadingImage}
-          className="flex items-center gap-1.5 text-xs font-medium text-gray-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 border border-gray-700 shrink-0"
+          className="order-4 sm:order-none flex items-center gap-1.5 text-xs font-medium text-gray-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-3 py-2 sm:py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 border border-gray-700 shrink-0"
           title="Upload image (JPG, PNG, WEBP)"
         >
           {uploadingImage ? (

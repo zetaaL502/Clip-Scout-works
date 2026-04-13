@@ -87,6 +87,7 @@ export const storage = {
     localStorage.removeItem(KEYS.SEGMENTS);
     localStorage.removeItem(KEYS.CLIPS);
     localStorage.removeItem(KEYS.SELECTIONS);
+    localStorage.removeItem(KEYS.CUSTOM_UPLOADS);
   },
 
   getSegments: () => get<Segment[]>(KEYS.SEGMENTS) ?? [],

@@ -523,6 +523,7 @@ export function GridPage({ onBack, onSettings }: Props) {
           height: 720,
           duration: upload.duration || 15,
           fileName: upload.fileName,
+          fileType: upload.fileType,
         };
         clipByKey.set(
           `segment_${segIdx}_clip_${segClips.length + clipIdx}`,
@@ -577,14 +578,14 @@ export function GridPage({ onBack, onSettings }: Props) {
       const isGif = clip.source === "giphy";
       const isCustom = clip.source === "custom";
       const isImage =
-        isCustom && (clip.thumbnail_url?.startsWith("data:image") ?? false);
+        isCustom &&
+        (clip.fileType?.startsWith("image/") === true ||
+          /\.(png|jpe?g|webp|gif|bmp)$/i.test(clip.fileName ?? ""));
       const ext = isGif
         ? "gif"
         : isImage
-          ? "jpg"
-          : isCustom && clip.fileName?.endsWith(".png")
-            ? "png"
-            : "mp4";
+          ? (clip.fileName?.split(".").pop()?.toLowerCase() ?? "jpg")
+          : "mp4";
       const filename = `${fileNumber}.${ext}`;
 
       try {
@@ -711,9 +712,18 @@ export function GridPage({ onBack, onSettings }: Props) {
       })
       .map(({ key }) => key);
 
+    const validSelections = sortedSelections.filter((key) => clipByKey.has(key));
+    if (validSelections.length === 0) {
+      addToast(
+        "error",
+        "No clips found. Selections may be stale - reselect clips and try again.",
+      );
+      return;
+    }
+
     // Group selected keys by segment index to preserve per-segment video counts and durations
     const segmentGroups = new Map<number, string[]>();
-    for (const key of sortedSelections) {
+    for (const key of validSelections) {
       const parts = key.split("_");
       const segIdx = parseInt(parts[1] ?? "0", 10);
       if (!segmentGroups.has(segIdx)) segmentGroups.set(segIdx, []);

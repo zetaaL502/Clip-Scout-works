@@ -408,38 +408,44 @@ function trimVideo(
   durationSecs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Debug: Check if input file exists
-    if (
-      !fsp
-        .stat(inputPath)
-        .then(() => true)
-        .catch(() => false)
-    ) {
-      reject(new Error(`Input file does not exist: ${inputPath}`));
-      return;
-    }
-
-    console.log(
-      `[trimVideo] Processing: ${inputPath} -> ${outputPath} (${durationSecs}s)`,
-    );
+    // Re-encode into a consistent no-audio stream so concat is reliable
+    // across mixed providers and custom uploads.
+    fsp
+      .stat(inputPath)
+      .then(() => {
+        console.log(
+          `[trimVideo] Processing: ${inputPath} -> ${outputPath} (${durationSecs}s)`,
+        );
+      })
+      .catch(() => {
+        reject(new Error(`Input file does not exist: ${inputPath}`));
+        return;
+      });
 
     const ffmpeg = spawn(
       FFmpeg_PATH,
       [
         "-loglevel",
         "error",
+        "-stream_loop",
+        "-1",
         "-i",
         inputPath,
         "-t",
         durationSecs.toFixed(3),
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p,fps=30",
         "-c:v",
         "libx264",
         "-preset",
-        "ultrafast",
+        "fast",
+        "-profile:v",
+        "baseline",
+        "-level",
+        "3.0",
         "-crf",
-        "28",
-        "-c:a",
-        "aac",
+        "24",
+        "-an",
         "-movflags",
         "+faststart",
         outputPath,
@@ -767,13 +773,9 @@ async function processSegmentsExport(
           await imageToVideo(rawPath, trimmedPath, IMAGE_DURATION);
           console.log(`[export] imageToVideo completed for clip ${clipIdx}`);
         } else {
-          const actualDuration = await getVideoDuration(rawPath);
-
-          if (actualDuration > 0 && actualDuration < targetDuration - 0.1) {
-            await loopAndTrimVideo(rawPath, trimmedPath, targetDuration);
-          } else {
-            await trimVideo(rawPath, trimmedPath, targetDuration);
-          }
+          // Always force exact target duration with consistent encoding.
+          // This prevents short-source drift and concat incompatibilities.
+          await trimVideo(rawPath, trimmedPath, targetDuration);
         }
 
         await fsp.unlink(rawPath).catch(() => {});
