@@ -184,9 +184,10 @@ function ClipCardImpl({
       {/* Image label for custom images */}
       {!isGif &&
         clip.source === "custom" &&
-        clip.thumbnail_url?.startsWith("data:image") && (
+        (clip.thumbnail_url?.startsWith("data:image") ||
+          /\.(jpg|jpeg|png|webp)$/i.test(clip.fileName || "")) && (
           <div className="absolute top-1.5 left-1.5 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded font-medium pointer-events-none">
-            IMAGE
+            IMG
           </div>
         )}
 

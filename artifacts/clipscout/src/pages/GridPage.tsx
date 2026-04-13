@@ -676,7 +676,10 @@ export function GridPage({ onBack, onSettings }: Props) {
 
       // Transform CustomUpload to Clip and add after stock clips
       segCustoms.forEach((upload, clipIdx) => {
-        const isImage = upload.thumbnailData?.startsWith("data:image") ?? false;
+        const isImage =
+          upload.fileType?.startsWith("image/") ??
+          upload.thumbnailData?.startsWith("data:image") ??
+          false;
         const clip: Clip = {
           id: upload.id,
           segmentId: seg.id,
@@ -687,6 +690,7 @@ export function GridPage({ onBack, onSettings }: Props) {
           height: 720,
           duration: upload.duration || 15,
           fileName: upload.fileName,
+          fileType: upload.fileType,
         };
         clipByKey.set(
           `segment_${segIdx}_clip_${segClips.length + clipIdx}`,
@@ -733,7 +737,7 @@ export function GridPage({ onBack, onSettings }: Props) {
       const rawDur = parseFloat(
         String(seg.duration_estimate).replace(/[^0-9.]/g, ""),
       );
-      const duration = isNaN(rawDur) ? 20 : Math.min(30, Math.max(15, rawDur));
+      const duration = isNaN(rawDur) ? 20 : rawDur;
       const segUrls: string[] = [];
       const segSources: string[] = [];
       const segTypes: ("image" | "video")[] = [];

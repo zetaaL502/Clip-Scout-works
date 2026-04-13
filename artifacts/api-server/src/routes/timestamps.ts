@@ -327,57 +327,69 @@ router.post("/parse-timestamps", (req, res) => {
     return;
   }
 
-  // Determine total duration
-  const totalDuration = rawBlocks[rawBlocks.length - 1]?.end ?? 0;
-
-  // Redistribute into 30-second segments
-  // For each 30s window, collect text from blocks that overlap with that window
-  const numSegments = Math.max(1, Math.ceil(totalDuration / SEGMENT_DURATION));
+  // Group subtitles into strict 60-second windows based on START time
+  // Segment 1: 0-59s, Segment 2: 1:00-1:59, etc.
   const redistributed: Array<{
     startSec: number;
     endSec: number;
     text: string;
   }> = [];
 
-  for (let seg = 0; seg < numSegments; seg++) {
-    const segStart = seg * SEGMENT_DURATION;
-    const segEnd = Math.min(segStart + SEGMENT_DURATION, totalDuration);
+  let currentWindow = 0;
+  let currentSegmentBlocks: RawBlock[] = [];
 
-    const segText = rawBlocks
-      .filter((block) => block.end > segStart && block.start < segEnd)
-      .map((block) => {
-        // If block spans multiple segments, only include proportional words
-        const overlapStart = Math.max(block.start, segStart);
-        const overlapEnd = Math.min(block.end, segEnd);
-        const overlapFraction =
-          (overlapEnd - overlapStart) / (block.end - block.start);
-        if (overlapFraction >= 0.5) return block.text;
-        // Partial block: include a proportional slice of words
-        const words = block.text.split(" ");
-        const count = Math.max(1, Math.round(words.length * overlapFraction));
-        return block.start < segStart
-          ? words.slice(words.length - count).join(" ")
-          : words.slice(0, count).join(" ");
-      })
+  for (const block of rawBlocks) {
+    // Calculate which 60-second window this subtitle's START time falls into
+    const blockWindow = Math.floor(block.start / SEGMENT_DURATION);
+
+    if (blockWindow !== currentWindow && currentSegmentBlocks.length > 0) {
+      // New window - close current segment
+      const firstBlock = currentSegmentBlocks[0];
+      const lastBlock = currentSegmentBlocks[currentSegmentBlocks.length - 1];
+      const segText = currentSegmentBlocks
+        .map((b) => b.text)
+        .join(" ")
+        .trim();
+      if (segText) {
+        redistributed.push({
+          startSec: firstBlock.start,
+          endSec: lastBlock.end,
+          text: segText,
+        });
+      }
+      currentSegmentBlocks = [block];
+      currentWindow = blockWindow;
+    } else {
+      currentSegmentBlocks.push(block);
+    }
+  }
+
+  // Don't forget the last segment (whatever remains)
+  if (currentSegmentBlocks.length > 0) {
+    const firstBlock = currentSegmentBlocks[0];
+    const lastBlock = currentSegmentBlocks[currentSegmentBlocks.length - 1];
+    const segText = currentSegmentBlocks
+      .map((b) => b.text)
       .join(" ")
       .trim();
-
     if (segText) {
-      redistributed.push({ startSec: segStart, endSec: segEnd, text: segText });
+      redistributed.push({
+        startSec: firstBlock.start,
+        endSec: lastBlock.end,
+        text: segText,
+      });
     }
   }
 
   if (redistributed.length === 0) {
-    res
-      .status(422)
-      .json({
-        error: "Could not redistribute timestamp blocks into segments.",
-      });
+    res.status(422).json({
+      error: "Could not redistribute timestamp blocks into segments.",
+    });
     return;
   }
 
   const segments = redistributed.map((seg, idx) => {
-    const duration = Math.round(seg.endSec - seg.startSec);
+    const duration = seg.endSec - seg.startSec; // Use full precision
     const keywords = extractSmartKeywords(seg.text);
     return {
       order_index: idx + 1,

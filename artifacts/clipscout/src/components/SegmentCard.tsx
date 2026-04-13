@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Plus, ChevronDown, Search, Trash2 } from "lucide-react";
+import {
+  Plus,
+  ChevronDown,
+  Search,
+  Trash2,
+  Image as ImageIcon,
+} from "lucide-react";
 import { ClipCard } from "./ClipCard";
 import { storage } from "../storage";
 import { fetchPexelsClips, fetchGiphyClips, fetchPixabayClips } from "../api";
 import { useToastCtx } from "../context/ToastContext";
-import type { Clip, Segment } from "../types";
+import type { Clip, Segment, CustomUpload } from "../types";
 
 interface Props {
   segment: Segment;
@@ -61,6 +67,8 @@ export function SegmentCard({
   const [manualKeyword, setManualKeyword] = useState("");
   const [manualSource, setManualSource] = useState<ManualSource>("pexels");
   const [loadingManual, setLoadingManual] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const manualPageRef = useRef(1);
   const [textExpanded, setTextExpanded] = useState(false);
 
@@ -464,6 +472,88 @@ export function SegmentCard({
     setSearchGroups((prev) => prev.filter((_, i) => i !== groupIndex));
   }
 
+  // Handle image upload
+  function handleImageUploadClick() {
+    imageInputRef.current?.click();
+  }
+
+  async function handleImageSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (!["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      addToast("error", "Only JPG, PNG and WEBP accepted");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      addToast("error", "File too large (max 10MB)");
+      return;
+    }
+
+    setUploadingImage(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload-image", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Upload failed");
+      }
+
+      const data = (await res.json()) as {
+        imageId: string;
+        filename: string;
+        url: string;
+        fileType: string;
+      };
+
+      const upload: CustomUpload = {
+        id: data.imageId,
+        segmentId: segment.id,
+        fileName: data.filename,
+        fileType: data.fileType,
+        fileSize: file.size,
+        mediaData: data.url,
+        thumbnailData: data.url,
+      };
+
+      storage.addCustomUpload(segment.id, upload);
+
+      const newClip: Clip = {
+        id: `custom-img-${data.imageId}`,
+        segmentId: segment.id,
+        source: "custom",
+        thumbnail_url: data.url,
+        media_url: data.url,
+        width: 1920,
+        height: 1080,
+        duration: 5,
+        fileName: data.filename,
+        fileType: data.fileType,
+      } as Clip;
+
+      const currentClips = storage.getSegmentClips(segment.id);
+      const newClips = [...currentClips, newClip];
+      storage.setClips({ ...storage.getClips(), [segment.id]: newClips });
+      setClips(newClips);
+
+      addToast("success", "Image uploaded!");
+    } catch (err) {
+      addToast("error", (err as Error).message || "Failed to upload image");
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  }
+
   const skeletons = Array.from({ length: 4 });
 
   return (
@@ -602,6 +692,33 @@ export function SegmentCard({
             <span>Delete</span>
           </button>
         )}
+
+        {/* Divider */}
+        <div className="h-5 w-px bg-gray-700 shrink-0" />
+
+        {/* Image upload button */}
+        <button
+          onClick={handleImageUploadClick}
+          disabled={uploadingImage}
+          className="flex items-center gap-1.5 text-xs font-medium text-gray-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800 active:scale-95 border border-gray-700 shrink-0"
+          title="Upload image (JPG, PNG, WEBP)"
+        >
+          {uploadingImage ? (
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <ImageIcon size={14} />
+          )}
+          <span>IMG</span>
+        </button>
+
+        {/* Hidden file input */}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={handleImageSelected}
+        />
       </div>
 
       {/* Search groups delete buttons */}

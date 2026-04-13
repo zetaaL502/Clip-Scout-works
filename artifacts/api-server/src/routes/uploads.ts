@@ -77,7 +77,10 @@ router.post("/extract-zip", async (req: Request, res: Response) => {
       let start = 0;
       while (true) {
         const idx = buf.indexOf(sep, start);
-        if (idx === -1) { result.push(buf.slice(start)); break; }
+        if (idx === -1) {
+          result.push(buf.slice(start));
+          break;
+        }
         result.push(buf.slice(start, idx));
         start = idx + sep.length;
       }
@@ -202,11 +205,9 @@ router.post("/extract-zip", async (req: Request, res: Response) => {
       try {
         await fsp.rm(extractDir, { recursive: true, force: true });
       } catch {}
-      res
-        .status(500)
-        .json({
-          error: `Failed to extract ZIP: ${err instanceof Error ? err.message : String(err)}`,
-        });
+      res.status(500).json({
+        error: `Failed to extract ZIP: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   } catch (err) {
     console.error(`[uploads] Error: ${err}`);
@@ -217,7 +218,10 @@ router.post("/extract-zip", async (req: Request, res: Response) => {
 router.get(
   "/uploaded-file/:uploadId/:filename",
   async (req: Request, res: Response) => {
-    const { uploadId, filename } = req.params as { uploadId: string; filename: string };
+    const { uploadId, filename } = req.params as {
+      uploadId: string;
+      filename: string;
+    };
     const filePath = path.join(UPLOADS_DIR, uploadId, filename);
 
     if (!fs.existsSync(filePath)) {
@@ -248,5 +252,98 @@ router.get(
     createReadStream(filePath).pipe(res);
   },
 );
+
+router.post("/upload-image", async (req: Request, res: Response) => {
+  const contentType = req.headers["content-type"] || "";
+
+  if (!contentType.includes("multipart/form-data")) {
+    res.status(400).json({ error: "Expected multipart/form-data" });
+    return;
+  }
+
+  try {
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) {
+      res.status(400).json({ error: "No boundary found in content-type" });
+      return;
+    }
+    const boundary = boundaryMatch[1];
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of req as any) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const body = Buffer.concat(chunks);
+
+    function splitBuffer(buf: Buffer, sep: Buffer): Buffer[] {
+      const result: Buffer[] = [];
+      let start = 0;
+      while (true) {
+        const idx = buf.indexOf(sep, start);
+        if (idx === -1) {
+          result.push(buf.slice(start));
+          break;
+        }
+        result.push(buf.slice(start, idx));
+        start = idx + sep.length;
+      }
+      return result;
+    }
+
+    const boundaryBuffer = Buffer.from(`--${boundary}`);
+    const endBoundary = Buffer.from(`--${boundary}--`);
+
+    const parts = splitBuffer(body, boundaryBuffer);
+
+    for (const part of parts) {
+      if (part.length === 0 || part.equals(endBoundary)) continue;
+
+      const trimmed = part.slice(0, part.length > 2 ? part.length - 2 : 0);
+      const headerEndIndex = trimmed.indexOf(Buffer.from("\r\n\r\n"));
+      if (headerEndIndex === -1) continue;
+
+      const headers = trimmed.slice(0, headerEndIndex).toString();
+      const content = trimmed.slice(headerEndIndex + 4);
+
+      const filenameMatch = headers.match(/filename="([^"]+)"/);
+      if (!filenameMatch) continue;
+
+      const filename = filenameMatch[1];
+      const ext = path.extname(filename).toLowerCase();
+
+      // Only accept images
+      if (![".jpg", ".jpeg", ".png", ".webp"].includes(ext)) {
+        res.status(400).json({ error: "Only JPG, PNG and WEBP accepted" });
+        return;
+      }
+
+      // Check file size (10MB limit)
+      if (content.length > 10 * 1024 * 1024) {
+        res.status(400).json({ error: "File too large (max 10MB)" });
+        return;
+      }
+
+      const imageId = randomUUID();
+      const imageDir = path.join(UPLOADS_DIR, imageId);
+      await fsp.mkdir(imageDir, { recursive: true });
+      const imagePath = path.join(imageDir, filename);
+      fs.writeFileSync(imagePath, content);
+
+      res.json({
+        success: true,
+        imageId,
+        filename,
+        url: `/api/uploaded-file/${imageId}/${encodeURIComponent(filename)}`,
+        fileType: `image/${ext.replace(".", "")}`,
+      });
+      return;
+    }
+
+    res.status(400).json({ error: "No image file found" });
+  } catch (err) {
+    console.error(`[uploads] Image upload error: ${err}`);
+    res.status(500).json({ error: String(err) });
+  }
+});
 
 export default router;

@@ -177,8 +177,29 @@ router.get("/download/:zipId", (req: Request, res: Response) => {
   fs.createReadStream(entry.filePath).pipe(res);
 });
 
+function resolveLocalFilePath(url: string): string | null {
+  if (!url.startsWith("/api/uploaded-file/")) return null;
+  const parts = url.split("/");
+  const uploadId = parts[3];
+  const filename = decodeURIComponent(parts[parts.length - 1]);
+  const UPLOADS_DIR =
+    process.platform === "win32"
+      ? path.join(
+          process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp",
+          "clipscout_uploads",
+        )
+      : "/tmp/clipscout_uploads";
+  return path.join(UPLOADS_DIR, uploadId, filename);
+}
+
 // Download a URL to a file path, following redirects.
 function downloadFile(url: string, dest: string): Promise<void> {
+  // Handle local uploaded files
+  const localPath = resolveLocalFilePath(url);
+  if (localPath) {
+    return fsp.copyFile(localPath, dest).then(() => {});
+  }
+
   // Handle data URLs (base64 custom uploads)
   if (url.startsWith("data:")) {
     return new Promise((resolve, reject) => {
@@ -255,6 +276,19 @@ function fixVideoMetadata(
   outputPath: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Debug: Check if input file exists
+    fsp
+      .stat(inputPath)
+      .then(() => {
+        console.log(
+          `[fixVideoMetadata] Processing: ${inputPath} -> ${outputPath}`,
+        );
+      })
+      .catch(() => {
+        reject(new Error(`Input file does not exist: ${inputPath}`));
+        return;
+      });
+
     const ffmpeg = spawn(
       FFmpeg_PATH,
       [
@@ -277,10 +311,12 @@ function fixVideoMetadata(
     ffmpeg.stderr.on("data", (chunk: Buffer) =>
       stderrChunks.push(chunk.toString()),
     );
-
-    ffmpeg.on("error", reject);
+    ffmpeg.on("error", (err) => {
+      reject(err);
+    });
     ffmpeg.on("close", (code) => {
       if (code === 0) {
+        console.log(`[fixVideoMetadata] Success: ${outputPath}`);
         resolve();
       } else {
         reject(
@@ -297,6 +333,20 @@ function fixVideoMetadata(
 // Returns 0 if the duration cannot be determined.
 function getVideoDuration(filePath: string): Promise<number> {
   return new Promise((resolve) => {
+    // Debug: Check if input file exists
+    fsp
+      .stat(filePath)
+      .then(() => {
+        console.log(`[getVideoDuration] Probing: ${filePath}`);
+      })
+      .catch((err) => {
+        console.error(
+          `[getVideoDuration] File not found or inaccessible: ${filePath}, Error: ${err.message}`,
+        );
+        resolve(0);
+        return;
+      });
+
     const ffmpeg = spawn(
       FFmpeg_PATH,
       [
@@ -308,17 +358,38 @@ function getVideoDuration(filePath: string): Promise<number> {
         "default=noprint_wrappers=1:nokey=1",
         filePath,
       ],
-      { stdio: ["ignore", "pipe", "ignore"] },
+      { stdio: ["ignore", "pipe", "pipe"] },
     );
 
     let stdout = "";
     ffmpeg.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
     });
-    ffmpeg.on("error", () => resolve(0));
-    ffmpeg.on("close", () => {
+    ffmpeg.on("error", (err) => {
+      console.error(
+        `[getVideoDuration] FFmpeg spawn error for ${filePath}: ${err.message}`,
+      );
+      resolve(0);
+    });
+
+    const stderrChunks: string[] = [];
+    ffmpeg.stderr.on("data", (chunk: Buffer) => {
+      stderrChunks.push(chunk.toString());
+    });
+
+    ffmpeg.on("close", (code) => {
+      if (code !== 0) {
+        console.error(
+          `[getVideoDuration] FFmpeg exited with code ${code} for ${filePath}: ${stderrChunks.join("")}`,
+        );
+        resolve(0);
+        return;
+      }
+
       const parsed = parseFloat(stdout.trim());
-      resolve(isNaN(parsed) ? 0 : parsed);
+      const duration = isNaN(parsed) ? 0 : parsed;
+      console.log(`[getVideoDuration] Result: ${filePath} -> ${duration}s`);
+      resolve(duration);
     });
   });
 }
@@ -332,6 +403,21 @@ function trimVideo(
   durationSecs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Debug: Check if input file exists
+    if (
+      !fsp
+        .stat(inputPath)
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      reject(new Error(`Input file does not exist: ${inputPath}`));
+      return;
+    }
+
+    console.log(
+      `[trimVideo] Processing: ${inputPath} -> ${outputPath} (${durationSecs}s)`,
+    );
+
     const ffmpeg = spawn(
       FFmpeg_PATH,
       [
@@ -360,10 +446,14 @@ function trimVideo(
     ffmpeg.stderr.on("data", (chunk: Buffer) =>
       stderrChunks.push(chunk.toString()),
     );
-    ffmpeg.on("error", reject);
+    ffmpeg.on("error", (err) => {
+      reject(err);
+    });
     ffmpeg.on("close", (code) => {
-      if (code === 0) resolve();
-      else
+      if (code === 0) {
+        console.log(`[trimVideo] Success: ${outputPath}`);
+        resolve();
+      } else
         reject(
           new Error(
             `FFmpeg trim failed (code ${code}): ${stderrChunks.join("")}`,
@@ -381,6 +471,19 @@ function loopAndTrimVideo(
   targetSecs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Debug: Check if input file exists
+    fsp
+      .stat(inputPath)
+      .then(() => {
+        console.log(
+          `[loopAndTrimVideo] Processing: ${inputPath} -> ${outputPath} (${targetSecs}s)`,
+        );
+      })
+      .catch(() => {
+        reject(new Error(`Input file does not exist: ${inputPath}`));
+        return;
+      });
+
     const ffmpeg = spawn(
       FFmpeg_PATH,
       [
@@ -411,10 +514,14 @@ function loopAndTrimVideo(
     ffmpeg.stderr.on("data", (chunk: Buffer) =>
       stderrChunks.push(chunk.toString()),
     );
-    ffmpeg.on("error", reject);
+    ffmpeg.on("error", (err) => {
+      reject(err);
+    });
     ffmpeg.on("close", (code) => {
-      if (code === 0) resolve();
-      else
+      if (code === 0) {
+        console.log(`[loopAndTrimVideo] Success: ${outputPath}`);
+        resolve();
+      } else
         reject(
           new Error(
             `FFmpeg loop failed (code ${code}): ${stderrChunks.join("")}`,
@@ -439,7 +546,42 @@ async function stitchVideos(
     tempDir,
     `concat_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`,
   );
-  const listContent = inputPaths.map((p) => `file '${p}'`).join("\n");
+
+  // Debug: Log input paths
+  console.log(`[stitchVideos] Input paths (${inputPaths.length}):`, inputPaths);
+
+  // Validate that all input files exist before proceeding
+  const inputFilesExist = await Promise.all(
+    inputPaths.map((p) =>
+      fsp
+        .stat(p)
+        .then(() => true)
+        .catch(() => false),
+    ),
+  );
+  const missingFiles = inputPaths.filter((_, i) => !inputFilesExist[i]);
+  if (missingFiles.length > 0) {
+    throw new Error(
+      `Missing input files for stitching: ${missingFiles.join(", ")}`,
+    );
+  }
+
+  // Properly escape file paths for FFmpeg concat demuxer
+  // On Windows, we need to use forward slashes and properly escape the paths
+  const escapedPaths = inputPaths.map((p) => {
+    // Convert to forward slashes for FFmpeg compatibility
+    const normalized = p.replace(/\\/g, "/");
+    // For FFmpeg concat demuxer, we need to escape special characters
+    // Wrap in single quotes and escape any existing single quotes
+    const escaped = normalized.replace(/'/g, "'\\''");
+    return `file '${escaped}'`;
+  });
+
+  const listContent = escapedPaths.join("\n");
+
+  // Debug: Log list file content
+  console.log(`[stitchVideos] List file content:\n${listContent}`);
+
   await fsp.writeFile(listFile, listContent, "utf8");
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn(
@@ -472,8 +614,10 @@ async function stitchVideos(
     });
     ffmpeg.on("close", (code) => {
       fsp.unlink(listFile).catch(() => {});
-      if (code === 0) resolve();
-      else
+      if (code === 0) {
+        console.log(`[stitchVideos] Success: ${outputPath}`);
+        resolve();
+      } else
         reject(
           new Error(
             `FFmpeg stitch failed (code ${code}): ${stderrChunks.join("")}`,
@@ -490,6 +634,19 @@ function imageToVideo(
   durationSecs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Debug: Check if input file exists
+    fsp
+      .stat(inputPath)
+      .then(() => {
+        console.log(
+          `[imageToVideo] Processing: ${inputPath} -> ${outputPath} (${durationSecs}s)`,
+        );
+      })
+      .catch(() => {
+        reject(new Error(`Input file does not exist: ${inputPath}`));
+        return;
+      });
+
     const ffmpeg = spawn(
       FFmpeg_PATH,
       [
@@ -499,10 +656,16 @@ function imageToVideo(
         inputPath,
         "-t",
         durationSecs.toFixed(3),
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
         "-c:v",
         "libx264",
         "-preset",
-        "ultrafast",
+        "medium", // Changed from ultrafast to medium for better compatibility
+        "-profile:v",
+        "baseline", // Baseline profile for maximum compatibility
+        "-level",
+        "3.0", // Level 3.0 for broad device support
         "-crf",
         "28",
         "-pix_fmt",
@@ -518,15 +681,23 @@ function imageToVideo(
     ffmpeg.stderr.on("data", (chunk: Buffer) =>
       stderrChunks.push(chunk.toString()),
     );
-    ffmpeg.on("error", reject);
+    ffmpeg.on("error", (err) => {
+      console.error(`[imageToVideo] FFmpeg spawn error: ${err.message}`);
+      reject(err);
+    });
     ffmpeg.on("close", (code) => {
-      if (code === 0) resolve();
-      else
-        reject(
-          new Error(
-            `FFmpeg image->video failed (code ${code}): ${stderrChunks.join("")}`,
-          ),
+      if (code === 0) {
+        console.log(`[imageToVideo] Success: ${outputPath}`);
+        resolve();
+      } else {
+        const errorMsg = stderrChunks.join("");
+        console.error(
+          `[imageToVideo] FFmpeg failed with code ${code}: ${errorMsg}`,
         );
+        reject(
+          new Error(`FFmpeg image->video failed (code ${code}): ${errorMsg}`),
+        );
+      }
     });
   });
 }
@@ -577,10 +748,19 @@ async function processSegmentsExport(
         clipType === "image" ? IMAGE_DURATION : videoDuration;
 
       try {
-        await downloadFile(urls[clipIdx], rawPath);
+        const currentUrl = urls[clipIdx];
+        console.log(
+          `[export] Processing clip ${clipIdx}: type=${clipType}, url=${currentUrl.substring(0, 50)}...`,
+        );
+        await downloadFile(currentUrl, rawPath);
+
+        // Verify downloaded file
+        const stats = await fsp.stat(rawPath);
+        console.log(`[export] Downloaded ${clipIdx}: ${stats.size} bytes`);
 
         if (clipType === "image") {
           await imageToVideo(rawPath, trimmedPath, IMAGE_DURATION);
+          console.log(`[export] imageToVideo completed for clip ${clipIdx}`);
         } else {
           const actualDuration = await getVideoDuration(rawPath);
 

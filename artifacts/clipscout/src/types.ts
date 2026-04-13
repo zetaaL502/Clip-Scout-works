@@ -20,6 +20,7 @@ export interface Clip {
   duration?: number;
   localPath?: string;
   fileName?: string;
+  fileType?: string;
 }
 
 export interface CustomUpload {
