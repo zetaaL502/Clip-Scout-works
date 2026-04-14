@@ -32,23 +32,13 @@ export async function fetchPexelsClips(
     }>,
   ) =>
     data.slice(0, 4).map((item) => ({
-<<<<<<< HEAD
       id: `pexels-${segment.id}-${item.id}-${page}`,
       segmentId: segment.id,
       source: 'pexels' as const,
-=======
-      id: `pexels-${item.id}-${page}`,
-      segmentId: segment.id,
-      source: "pexels" as const,
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
       thumbnail_url: item.thumbnail_url,
       media_url: item.media_url,
       width: item.width,
       height: item.height,
-<<<<<<< HEAD
-=======
-      duration: item.duration,
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
     }));
 
   try {
@@ -128,33 +118,16 @@ export async function fetchPexelsClips(
     .filter((video) => isLandscape(video.width, video.height))
     .map((video) => {
       const hdFile =
-<<<<<<< HEAD
         video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
         video.video_files.find((f) => f.file_type === 'video/mp4' && isLandscape(f.width, f.height)) ??
         video.video_files.find((f) => f.file_type === 'video/mp4') ??
-=======
-        video.video_files.find(
-          (f) => f.quality === "hd" && f.file_type === "video/mp4",
-        ) ??
-        video.video_files.find(
-          (f) => f.file_type === "video/mp4" && isLandscape(f.width, f.height),
-        ) ??
-        video.video_files.find((f) => f.file_type === "video/mp4") ??
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
         video.video_files[0];
       return {
         id: String(video.id),
         thumbnail_url: video.image,
-<<<<<<< HEAD
         media_url: hdFile?.link ?? '',
         width: video.width,
         height: video.height,
-=======
-        media_url: hdFile?.link ?? "",
-        width: video.width,
-        height: video.height,
-        duration: video.duration,
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
       };
     });
   return mapClips(normalized);
@@ -311,7 +284,6 @@ export async function analyzeScript(
 ): Promise<RawSegment[]> {
   onStatus?.("Reading your script…");
 
-<<<<<<< HEAD
 CRITICAL RULE: You MUST cover the ENTIRE script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part of the script. Every single sentence must appear in exactly one segment. Create as many segments as needed.
 
 Instructions:
@@ -343,8 +315,6 @@ ${script}`;
 
 async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
   const apiKey = storage.getGroqKey();
-=======
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180_000);
 
@@ -414,7 +384,6 @@ async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
     throw e;
   }
 }
-<<<<<<< HEAD
 
 function findSplitPoint(script: string): number {
   const mid = Math.floor(script.length / 2);
@@ -443,5 +412,3 @@ export async function analyzeScript(script: string): Promise<RawSegment[]> {
 
   return callGroq(script);
 }
-=======
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
