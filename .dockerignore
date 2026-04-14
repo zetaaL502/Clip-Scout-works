@@ -1,0 +1,8 @@
+node_modules
+**/node_modules
+**/.git
+.replit
+.local
+attached_assets
+artifacts/mockup-sandbox
+scripts

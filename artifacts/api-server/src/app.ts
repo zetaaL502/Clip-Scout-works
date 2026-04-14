@@ -1,10 +1,74 @@
-import express, { type Express } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app: Express = express();
+
+// --- Simple in-memory rate limiter ---
+// Chunk uploads are excluded (they can number in the thousands for large files).
+// All other routes: max 500 requests per IP per minute.
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function rateLimiter(req: Request, res: Response, next: NextFunction): void {
+  // Chunk uploads are high-volume by design — skip counting them
+  if (req.url.includes("/subtitles/chunk")) {
+    next();
+    return;
+  }
+  const ip =
+    (req.headers["x-forwarded-for"] as string | undefined)
+      ?.split(",")[0]
+      ?.trim() ??
+    req.socket?.remoteAddress ??
+    "unknown";
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
+    next();
+    return;
+  }
+  entry.count += 1;
+  if (entry.count > 500) {
+    res.status(429).json({ error: "Too many requests. Please slow down." });
+    return;
+  }
+  next();
+}
+
+// --- CORS ---
+const corsOptions: cors.CorsOptions = {
+  origin(origin, callback) {
+    if (
+      !origin ||
+      /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+      origin.endsWith(".replit.dev") ||
+      origin.endsWith(".replit.app") ||
+      origin.endsWith(".pike.replit.dev") ||
+      origin.endsWith(".railway.app") ||
+      origin.endsWith(".up.railway.app") ||
+      origin.includes(".ngrok-free.app") ||
+      origin.includes(".ngrok-free.dev") ||
+      origin.includes(".ngrok.io") ||
+      origin.includes("localhost")
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+};
 
 app.use(
   pinoHttp({
@@ -25,10 +89,26 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors(corsOptions));
+app.use(rateLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// --- Serve frontend static files ---
+const frontendDist = path.join(process.cwd(), "../clipscout/dist/public");
+console.log("Frontend path:", frontendDist);
+app.use(
+  express.static(frontendDist, {
+    fallthrough: false,
+    redirect: false,
+  }),
+);
+
+// --- Catch-all: serve index.html for client-side routing ---
+app.get(/.*/, (_req: Request, res: Response) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 export default app;

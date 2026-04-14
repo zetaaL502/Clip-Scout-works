@@ -68,11 +68,11 @@
 
 /* Dark mode only — ClipScout uses #0a0a0a background */
 :root {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(255, 255, 255, 0.1);
+  --badge-outline: rgba(255, 255, 255, 0.05);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(255, 255, 255, 0.04);
+  --elevate-2: rgba(255, 255, 255, 0.09);
 
   --background: 0 0% 4%;
   --foreground: 0 0% 98%;
@@ -116,17 +116,22 @@
   --sidebar-accent-foreground: 0 0% 85%;
   --sidebar-ring: 142 71% 45%;
 
-  --app-font-sans: 'Inter', sans-serif;
+  --app-font-sans: "Inter", sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: Menlo, monospace;
   --radius: 0.5rem;
   --shadow-2xs: 0px 2px 4px 0px rgba(0, 0, 0, 0.4);
   --shadow-xs: 0px 2px 4px 0px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0px 2px 4px 0px rgba(0, 0, 0, 0.4), 0px 1px 2px -1px rgba(0,0,0,0.3);
-  --shadow: 0px 4px 8px 0px rgba(0, 0, 0, 0.4), 0px 1px 2px -1px rgba(0,0,0,0.3);
-  --shadow-md: 0px 4px 12px 0px rgba(0, 0, 0, 0.5), 0px 2px 4px -1px rgba(0,0,0,0.4);
-  --shadow-lg: 0px 8px 24px 0px rgba(0, 0, 0, 0.5), 0px 4px 6px -1px rgba(0,0,0,0.4);
-  --shadow-xl: 0px 12px 40px 0px rgba(0, 0, 0, 0.6), 0px 8px 10px -1px rgba(0,0,0,0.5);
+  --shadow-sm:
+    0px 2px 4px 0px rgba(0, 0, 0, 0.4), 0px 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --shadow:
+    0px 4px 8px 0px rgba(0, 0, 0, 0.4), 0px 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --shadow-md:
+    0px 4px 12px 0px rgba(0, 0, 0, 0.5), 0px 2px 4px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg:
+    0px 8px 24px 0px rgba(0, 0, 0, 0.5), 0px 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-xl:
+    0px 12px 40px 0px rgba(0, 0, 0, 0.6), 0px 8px 10px -1px rgba(0, 0, 0, 0.5);
   --shadow-2xl: 0px 24px 64px 0px rgba(0, 0, 0, 0.7);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
@@ -160,8 +165,10 @@
     color: hsl(var(--muted-foreground));
     pointer-events: none;
   }
-  .no-default-hover-elevate {}
-  .no-default-active-elevate {}
+  .no-default-hover-elevate {
+  }
+  .no-default-active-elevate {
+  }
   .toggle-elevate::before,
   .toggle-elevate-2::before {
     content: "";
@@ -208,5 +215,66 @@
   .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
   .border.active-elevate-2:not(.no-active-interaction-elevate)::after {
     inset: -1px;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  /* Prevent horizontal overflow */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Better touch targets */
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Prevent text selection on UI elements */
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Safe area for bottom nav */
+  .safe-area-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  /* Larger inputs on mobile */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+  }
+
+  /* Prevent pull-to-refresh on main content */
+  main {
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* Hide scrollbar but keep functionality */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
   }
 }

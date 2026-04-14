@@ -1,0 +1,20 @@
+{
+  "apps": [
+    {
+      "name": "api-server",
+      "script": "pnpm",
+      "args": "run dev",
+      "cwd": "C:\\Users\\Galaxy\\Clip-Scout-works-2\\artifacts\\api-server"
+    },
+    {
+      "name": "frontend",
+      "script": "pnpm",
+      "args": "run dev",
+      "cwd": "C:\\Users\\Galaxy\\Clip-Scout-works-2\\artifacts\\clipscout",
+      "env": {
+        "PORT": "3001",
+        "BASE_PATH": "/"
+      }
+    }
+  ]
+}

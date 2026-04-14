@@ -1,18 +1,29 @@
-import type { Project, Segment, Clip } from './types';
+import type { Project, Segment, Clip, CustomUpload } from "./types";
 
 const KEYS = {
-  PROJECT: 'clipscout_project',
-  SEGMENTS: 'clipscout_segments',
-  CLIPS: 'clipscout_clips',
-  SELECTIONS: 'clipscout_selections',
-  GROQ_KEY: 'clipscout_groq_key',
-  GIPHY_KEY: 'clipscout_giphy_key',
-  PEXELS_KEY: 'clipscout_pexels_key',
+  PROJECT: "clipscout_project",
+  SEGMENTS: "clipscout_segments",
+  CLIPS: "clipscout_clips",
+  SELECTIONS: "clipscout_selections",
+  CUSTOM_UPLOADS: "clipscout_custom_uploads",
+  GROQ_KEY: "clipscout_groq_key",
+  GEMINI_KEY: "clipscout_gemini_key",
+  GIPHY_KEY: "clipscout_giphy_key",
+  PEXELS_KEY: "clipscout_pexels_key",
+  PIXABAY_KEY: "clipscout_pixabay_key",
+  YOUTUBE_KEY: "clipscout_youtube_key",
+  ASSEMBLYAI_KEY: "clipscout_assemblyai_key",
+  GIFIFY_KEY: "clipscout_gifify_key",
 };
+
+console.log("[Storage] LocalStorage keys:", KEYS);
 
 function get<T>(key: string): T | null {
   try {
     const v = localStorage.getItem(key);
+    if (v && key.includes("key")) {
+      console.log(`[Storage] GET ${key}:`, v ? `${v.slice(0, 10)}...` : "null");
+    }
     return v ? JSON.parse(v) : null;
   } catch {
     return null;
@@ -20,16 +31,30 @@ function get<T>(key: string): T | null {
 }
 
 function set(key: string, value: unknown): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    if (key.includes("key")) {
+      const str = JSON.stringify(value);
+      console.log(
+        `[Storage] SET ${key}:`,
+        str ? `${str.slice(0, 10)}...` : "empty",
+      );
+    }
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // QuotaExceededError — storage is full; silently ignore to prevent crash.
+  }
 }
 
 function keepHorizontalClip(clip: Clip): boolean {
-  if (clip.source !== 'pexels') return true;
-  if (typeof clip.width !== 'number' || typeof clip.height !== 'number') return false;
+  if (clip.source !== "pexels") return true;
+  if (typeof clip.width !== "number" || typeof clip.height !== "number")
+    return false;
   return clip.width > clip.height;
 }
 
-function sanitizeClipMap(input: Record<string, Clip[]>): Record<string, Clip[]> {
+function sanitizeClipMap(
+  input: Record<string, Clip[]>,
+): Record<string, Clip[]> {
   const next: Record<string, Clip[]> = {};
   Object.entries(input).forEach(([segmentId, clips]) => {
     next[segmentId] = (clips ?? []).filter(keepHorizontalClip);
@@ -38,12 +63,22 @@ function sanitizeClipMap(input: Record<string, Clip[]>): Record<string, Clip[]> 
 }
 
 export const storage = {
-  getGroqKey: () => localStorage.getItem(KEYS.GROQ_KEY) ?? '',
+  getGroqKey: () => localStorage.getItem(KEYS.GROQ_KEY) ?? "",
   setGroqKey: (k: string) => localStorage.setItem(KEYS.GROQ_KEY, k),
-  getGiphyKey: () => localStorage.getItem(KEYS.GIPHY_KEY) ?? '',
+  getGeminiKey: () => localStorage.getItem(KEYS.GEMINI_KEY) ?? "",
+  setGeminiKey: (k: string) => localStorage.setItem(KEYS.GEMINI_KEY, k),
+  getGiphyKey: () => localStorage.getItem(KEYS.GIPHY_KEY) ?? "",
   setGiphyKey: (k: string) => localStorage.setItem(KEYS.GIPHY_KEY, k),
-  getPexelsKey: () => localStorage.getItem(KEYS.PEXELS_KEY) ?? '',
+  getPexelsKey: () => localStorage.getItem(KEYS.PEXELS_KEY) ?? "",
   setPexelsKey: (k: string) => localStorage.setItem(KEYS.PEXELS_KEY, k),
+  getPixabayKey: () => localStorage.getItem(KEYS.PIXABAY_KEY) ?? "",
+  setPixabayKey: (k: string) => localStorage.setItem(KEYS.PIXABAY_KEY, k),
+  getYouTubeKey: () => localStorage.getItem(KEYS.YOUTUBE_KEY) ?? "",
+  setYouTubeKey: (k: string) => localStorage.setItem(KEYS.YOUTUBE_KEY, k),
+  getAssemblyAIKey: () => localStorage.getItem(KEYS.ASSEMBLYAI_KEY) ?? "",
+  setAssemblyAIKey: (k: string) => localStorage.setItem(KEYS.ASSEMBLYAI_KEY, k),
+  getGififyKey: () => localStorage.getItem(KEYS.GIFIFY_KEY) ?? "",
+  setGififyKey: (k: string) => localStorage.setItem(KEYS.GIFIFY_KEY, k),
 
   getProject: () => get<Project>(KEYS.PROJECT),
   setProject: (p: Project) => set(KEYS.PROJECT, p),
@@ -52,6 +87,7 @@ export const storage = {
     localStorage.removeItem(KEYS.SEGMENTS);
     localStorage.removeItem(KEYS.CLIPS);
     localStorage.removeItem(KEYS.SELECTIONS);
+    localStorage.removeItem(KEYS.CUSTOM_UPLOADS);
   },
 
   getSegments: () => get<Segment[]>(KEYS.SEGMENTS) ?? [],
@@ -67,7 +103,15 @@ export const storage = {
   addClips: (segmentId: string, newClips: Clip[]) => {
     const all = storage.getClips();
     const sanitizedNew = newClips.filter(keepHorizontalClip);
-    all[segmentId] = [...(all[segmentId] ?? []), ...sanitizedNew];
+    all[segmentId] = [
+      ...(all[segmentId] ?? []),
+      ...sanitizedNew.filter(
+        (newClip) =>
+          !(all[segmentId] ?? []).some(
+            (existingClip) => existingClip.id === newClip.id,
+          ),
+      ),
+    ];
     set(KEYS.CLIPS, all);
     return all;
   },
@@ -76,18 +120,64 @@ export const storage = {
     return all[segmentId] ?? [];
   },
 
-  getSelections: () => get<string[]>(KEYS.SELECTIONS) ?? [],
-  setSelections: (ids: string[]) => set(KEYS.SELECTIONS, ids),
-  toggleSelection: (id: string): string[] => {
+  selectionKey: (segmentIndex: number, clipIndex: number): string =>
+    `segment_${segmentIndex}_clip_${clipIndex}`,
+  isPositionalKey: (key: string): boolean => /^segment_\d+_clip_\d+$/.test(key),
+  getSelections: (): string[] => {
+    const raw = get<string[]>(KEYS.SELECTIONS) ?? [];
+    const filtered = raw.filter((key) => /^segment_\d+_clip_\d+$/.test(key));
+    if (filtered.length !== raw.length) {
+      set(KEYS.SELECTIONS, filtered);
+    }
+    return filtered;
+  },
+  setSelections: (ids: string[]) => {
+    const positional = ids.filter((key) => /^segment_\d+_clip_\d+$/.test(key));
+    set(KEYS.SELECTIONS, positional);
+  },
+  toggleSelection: (segmentIndex: number, clipIndex: number): string[] => {
+    const id = `segment_${segmentIndex}_clip_${clipIndex}`;
     const current = get<string[]>(KEYS.SELECTIONS) ?? [];
-    const updated = current.includes(id)
-      ? current.filter((x) => x !== id)
-      : [...current, id];
+    const filtered = current.filter((key) =>
+      /^segment_\d+_clip_\d+$/.test(key),
+    );
+    const updated = filtered.includes(id)
+      ? filtered.filter((x) => x !== id)
+      : [...filtered, id];
     set(KEYS.SELECTIONS, updated);
     return updated;
   },
-  isSelected: (id: string): boolean => {
+  isSelected: (segmentIndex: number, clipIndex: number): boolean => {
+    const id = `segment_${segmentIndex}_clip_${clipIndex}`;
     const current = get<string[]>(KEYS.SELECTIONS) ?? [];
-    return current.includes(id);
+    const filtered = current.filter((key) =>
+      /^segment_\d+_clip_\d+$/.test(key),
+    );
+    return filtered.includes(id);
+  },
+
+  getCustomUploads: (): Record<string, CustomUpload[]> => {
+    return get<Record<string, CustomUpload[]>>(KEYS.CUSTOM_UPLOADS) ?? {};
+  },
+  setCustomUploads: (uploads: Record<string, CustomUpload[]>) => {
+    set(KEYS.CUSTOM_UPLOADS, uploads);
+  },
+  addCustomUpload: (segmentId: string, upload: CustomUpload) => {
+    const all = storage.getCustomUploads();
+    if (!all[segmentId]) all[segmentId] = [];
+    all[segmentId].push(upload);
+    storage.setCustomUploads(all);
+  },
+  removeCustomUpload: (segmentId: string, uploadId: string) => {
+    const all = storage.getCustomUploads();
+    if (all[segmentId]) {
+      all[segmentId] = all[segmentId].filter((u) => u.id !== uploadId);
+      storage.setCustomUploads(all);
+    }
+  },
+  clearCustomUploads: (segmentId: string) => {
+    const all = storage.getCustomUploads();
+    delete all[segmentId];
+    storage.setCustomUploads(all);
   },
 };

@@ -1,0 +1,289 @@
+# ClipScout Export System - Complete Technical Documentation
+
+## System Overview
+
+ClipScout has TWO export methods:
+
+1. **"Export ZIP"** - Client-side download, no FFmpeg processing
+2. **"Phone"** - Server-side with FFmpeg trim/loop/stitch
+
+## Selection System
+
+### Selection Key Format
+
+Every selection: `segment_{segmentIndex}_clip_{clipIndex}`
+
+Examples:
+
+- `segment_0_clip_0` = First segment, first clip
+- `segment_0_clip_5` = First segment, 6th clip (from "Add 4 More")
+- `segment_1_clip_3` = Second segment, 4th clip
+
+### Selection Storage
+
+localStorage key: `clipscout_selections`
+Format: `["segment_0_clip_0", "segment_1_clip_3", ...]`
+
+### CRITICAL: Segment INDEX vs Segment ID
+
+**Two ways to identify segments:**
+
+1. **Segment INDEX** (in selection key): Position in `segments` array (0, 1, 2...)
+2. **Segment ID** (in storage): UUID stored in `segment.id`
+
+Example:
+
+```javascript
+segments[0].id = "abc-123"; // First segment's ID
+segments[1].id = "xyz-789"; // Second segment's ID
+
+// Selection key uses INDEX:
+("segment_0_clip_1"); // INDEX 0
+
+// Clip storage uses ID:
+clipscout_clips["abc-123"]; // ID abc-123
+```
+
+## Clip Storage Architecture
+
+### Clip Object
+
+```javascript
+{
+  id: "pexels-5267492-1",  // e.g. "source-videoId-page"
+  segmentId: "abc-123",     // UUID matching segment.id
+  source: "pexels",         // or "pixabay", "giphy", "custom"
+  thumbnail_url: "...",
+  media_url: "...",
+  width: 1920,
+  height: 1080,
+  duration: 15
+}
+```
+
+### localStorage: clipscout_clips
+
+```javascript
+{
+  "abc-123": [Clip, Clip, Clip, ...],  // By segment ID
+  "xyz-789": [Clip, Clip, ...]
+}
+```
+
+### How Clips Are Loaded
+
+**Initial Load (first 4):**
+
+```javascript
+const clips = await fetchPexelsClips(segment, 1);
+storage.addClips(segment.id, clips);
+```
+
+**"Add 4 More" (adds more, doesn't replace):**
+
+```javascript
+const newClips = await fetchPexelsClips(segment, nextPage);
+storage.addClips(segment.id, newClips); // APPENDS
+```
+
+After Add 4 More: indices 0,1,2,3,4,5,6,7
+
+## Export Methods
+
+### Method 1: "Export ZIP" (Client-side)
+
+File: `GridPage.tsx` - `handleExport()`
+
+Flow:
+
+1. Get fresh clips: `const freshClips = storage.getClips()`
+2. Build clipByKey Map
+3. Sort selections
+4. Download clips directly
+5. Bundle into ZIP
+
+### Method 2: "Phone" (Server-side)
+
+File: `GridPage.tsx` - `handleServerExport()`
+
+Flow:
+
+1. Get fresh clips
+2. Group selections by segment INDEX
+3. Resolve URLs (Pexels needs API call)
+4. Send to server: `{ segments: [{ urls, duration, types }, ...] }`
+5. Server processes with FFmpeg
+
+## Server Export Pipeline
+
+File: `artifacts/api-server/src/routes/export.ts`
+
+### Process Segments Export
+
+```javascript
+async function processSegmentsExport(jobId, segments, origin) {
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    const { urls, duration, types } = segments[segIdx];
+
+    // Calculate duration per clip
+    const imageCount = types.filter((t) => t === "image").length;
+    const videoCount = urls.length - imageCount;
+    const remainingDuration = duration - imageCount * 5;
+    const videoDuration = videoCount > 0 ? remainingDuration / videoCount : 0;
+
+    // Process each clip
+    for (let clipIdx = 0; clipIdx < urls.length; clipIdx++) {
+      await downloadFile(urls[clipIdx], rawPath);
+
+      if (types[clipIdx] === "image") {
+        await imageToVideo(rawPath, trimmedPath, 5);
+      } else {
+        const actualDuration = await getVideoDuration(rawPath);
+
+        if (actualDuration > 0 && actualDuration < videoDuration - 0.1) {
+          await loopAndTrimVideo(rawPath, trimmedPath, videoDuration);
+        } else {
+          await trimVideo(rawPath, trimmedPath, videoDuration);
+        }
+      }
+    }
+
+    // Stitch clips in segment
+    await stitchVideos(trimmedPaths, segOutputPath, jobDir);
+  }
+
+  // Package into ZIP
+  await createZip(segmentOutputPaths, zipPath);
+}
+```
+
+## Video Processing (FFmpeg)
+
+### Download File
+
+Downloads URL to temp file. Handles redirects and base64 data URLs.
+
+### Probe Duration
+
+```javascript
+ffmpeg -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 input.mp4
+```
+
+Returns duration in seconds.
+
+### Trim Video
+
+```javascript
+ffmpeg -i input.mp4 -t 15.000 -c:v libx264 -preset ultrafast -crf 28 -c:a aac -movflags +faststart output.mp4
+```
+
+### Loop and Trim (for short videos)
+
+```javascript
+ffmpeg -stream_loop -1 -i input.mp4 -t 15.000 -c:v libx264 -preset fast -crf 23 -c:a aac output.mp4
+```
+
+### Stitch Videos
+
+```javascript
+// Create list file:
+file 'clip1.mp4'
+file 'clip2.mp4'
+
+ffmpeg -f concat -safe 0 -i list.txt -c copy output.mp4
+```
+
+## Duration Calculation
+
+### Rule
+
+- Images = 5 seconds each
+- Videos split remaining time
+
+### Examples
+
+- 30s segment, 2 videos → 15s each
+- 22s segment, 2 videos → 11s each
+- 20s segment, 1 image + 1 video → 5s image, 15s video
+
+## URL Resolution
+
+### Pexels (needs special handling)
+
+```javascript
+// Parse video ID: "pexels-5267492-1" → "5267492"
+const videoId = parsePexelsVideoId(clip.id);
+
+// Fetch latest CDN URL
+const bestUrl = await fetchBestPexelsExportUrl(videoId);
+```
+
+Server endpoint: `/api/pexels-video/:videoId`
+Requires `PEXELS_API_KEY` in `.env`!
+
+## Bugs Found & Fixed
+
+### Bug 1: Stale Memoization (CRITICAL)
+
+**Problem**: `allClips` was memoized and didn't update when "Add 4 More" loaded new clips.
+
+**Fix**: Use `freshClips = storage.getClips()` in export functions.
+
+### Bug 2: Duplicate Dead Code
+
+**Problem**: Duplicate code at lines 621-635 in export.ts was breaking the loop.
+
+**Fix**: Removed duplicate block.
+
+### Bug 3: Duration Detection Broken
+
+**Problem**: `getVideoDuration` using `-f null -` wasn't returning duration.
+
+**Fix**: Changed to `-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1`
+
+### Bug 4: Sorting Bug
+
+**Problem**: Sort used `[, sA]` grabbing "clip" instead of segment number.
+
+**Fix**: Explicit parsing with `parts[1]`.
+
+## Testing Checklist
+
+1. Load clips normally (first 4)
+2. Click "Add 4 More"
+3. Select clips from the NEW section (indices 4+)
+4. Click "Phone" export
+5. Verify correct clips come out (not old ones!)
+
+## FFmpeg Path (Windows)
+
+```
+C:\Users\Galaxy\Downloads\ffmpeg-master-latest-win64-gpl\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe
+```
+
+## Files to Check
+
+**Frontend** (`artifacts/clipscout/`):
+
+- `src/pages/GridPage.tsx` - Export logic
+- `src/storage.ts` - localStorage operations
+
+**Backend** (`artifacts/api-server/`):
+
+- `src/routes/export.ts` - Server export
+- `src/routes/pexels.ts` - Pexels proxy
+- `.env` - Needs `PEXELS_API_KEY`
+
+## Commit
+
+Pushed to GitHub: commit `3d7931a` on main branch.
+
+## Summary for New Agent
+
+1. Pull code: `git pull origin main`
+2. Check `.env` has `PEXELS_API_KEY=B3naJ4sFU2508yTY9vfRdsBFyXz29jol4CVMIgwtZM9z8UUvQZAPqYSk`
+3. Build & restart server
+4. Test export with "Add 4 More" clips specifically
+5. Verify correct clips come out
+
+The core bug was using stale memoized `allClips` instead of fresh `storage.getClips()`.

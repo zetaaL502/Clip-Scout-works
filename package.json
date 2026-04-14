@@ -1,1 +1,23 @@
+<<<<<<< HEAD
 {"name":"workspace","version":"0.0.0","license":"MIT","scripts":{"build":"pnpm run typecheck && pnpm -r --if-present run build","typecheck:libs":"tsc --build","typecheck":"pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"},"private":true,"devDependencies":{"@types/react":"^19.2.14","@types/react-dom":"^19.2.3","prettier":"^3.8.1","typescript":"~5.9.2"},"dependencies":{"@types/file-saver":"^2.0.7","file-saver":"^2.0.5","jszip":"^3.10.1","lucide-react":"catalog:"}}
+=======
+{
+  "name": "workspace",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm --filter @workspace/clipscout run build && pnpm --filter @workspace/api-server run build",
+    "start": "node --enable-source-maps ./artifacts/api-server/dist/index.mjs",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+  },
+  "private": true,
+  "devDependencies": {
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "groq-sdk": "^1.1.2"
+  }
+}
+>>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
