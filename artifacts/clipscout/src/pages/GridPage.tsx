@@ -108,7 +108,6 @@ async function exportAllVideos(
   const zip = new JSZip();
   const folderName = "youtube_export";
 
-<<<<<<< HEAD
   for (let batchStart = 0; batchStart < total; batchStart += EXPORT_BATCH_SIZE) {
     const batchIndex = Math.floor(batchStart / EXPORT_BATCH_SIZE);
     const batchItems = videoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
@@ -120,20 +119,6 @@ async function exportAllVideos(
       const globalIndex = batchStart + i;
       const fileNumber = String(globalIndex + 1).padStart(3, '0');
       const ext = clip.source === 'giphy' ? 'gif' : 'mp4';
-=======
-  // Download all clips in parallel — each clip starts immediately without waiting
-  // for others, so total export time ≈ slowest single clip instead of sum of all clips.
-  const results = await Promise.all(
-    videoDataArray.map(async (clip, i) => {
-      const fileNumber = String(i + 1).padStart(3, "0");
-      const isGif = clip.source === "giphy";
-      const isCustom = clip.source === "custom";
-      const ext = isGif
-        ? "gif"
-        : isCustom && clip.fileName?.endsWith(".png")
-          ? "png"
-          : "mp4";
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
       const filename = `${fileNumber}.${ext}`;
 
       try {
@@ -222,17 +207,7 @@ export function GridPage({ onBack, onSettings }: Props) {
   const [bulkSelectNonce, setBulkSelectNonce] = useState(0);
   const [exporting, setExporting] = useState(false);
   const exportInFlightRef = useRef(false);
-<<<<<<< HEAD
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
-=======
-  const [serverExportState, setServerExportState] =
-    useState<ServerExportState | null>(null);
-  const exportLockKey = "__clipscout_export_lock__";
-  const [exportProgress, setExportProgress] = useState({
-    current: 0,
-    total: 0,
-  });
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
   const [scrollProgress, setScrollProgress] = useState(0);
   const project = storage.getProject();
   const hasPreloaded = useRef(false);
@@ -511,21 +486,8 @@ export function GridPage({ onBack, onSettings }: Props) {
 
   // Computer export - fast client-side download without FFmpeg processing
   async function handleExport() {
-<<<<<<< HEAD
     if (selectedCount === 0 || exportInFlightRef.current) return;
     exportInFlightRef.current = true;
-=======
-    if (
-      selectedCount === 0 ||
-      exporting ||
-      serverExportState?.status === "processing"
-    ) {
-      if (serverExportState?.status === "processing") {
-        addToast("info", "Phone export is in progress. Please wait.");
-      }
-      return;
-    }
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
 
     // Build clipByKey map including BOTH stock clips AND custom uploads
     const clipByKey = new Map<string, Clip>();
@@ -578,7 +540,6 @@ export function GridPage({ onBack, onSettings }: Props) {
       clipByKey.has(key),
     );
 
-<<<<<<< HEAD
     const exportable = selectedClips.filter(isLandscapeClip);
     
     if (exportable.length === 0) {
@@ -590,15 +551,6 @@ export function GridPage({ onBack, onSettings }: Props) {
     if (exportable.length < selectedClips.length) {
       addToast('info', `${selectedClips.length - exportable.length} vertical clip(s) skipped.`);
     }
-=======
-    if (validSelections.length === 0) {
-      addToast(
-        "error",
-        "No clips found. Clips may have expired - reload the page.",
-      );
-      return;
-    }
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
 
     setExporting(true);
     setExportProgress({ current: 0, total: validSelections.length });
@@ -857,14 +809,10 @@ export function GridPage({ onBack, onSettings }: Props) {
         status: "processing",
       });
     } catch {
-<<<<<<< HEAD
       addToast('error', 'Export failed. Please try again.');
     } finally {
       setExporting(false);
       exportInFlightRef.current = false;
-=======
-      addToast("error", "Failed to start server export. Please try again.");
->>>>>>> 4d2a67c963454d61c5ba7a917dba5a87cabd274c
     }
   }
 
