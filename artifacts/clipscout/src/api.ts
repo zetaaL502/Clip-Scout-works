@@ -32,13 +32,14 @@ export async function fetchPexelsClips(
     }>,
   ) =>
     data.slice(0, 4).map((item) => ({
-      id: `pexels-${segment.id}-${item.id}-${page}`,
+      id: `pexels-${item.id}-${page}`,
       segmentId: segment.id,
-      source: 'pexels' as const,
+      source: "pexels" as const,
       thumbnail_url: item.thumbnail_url,
       media_url: item.media_url,
       width: item.width,
       height: item.height,
+      duration: item.duration,
     }));
 
   try {
@@ -118,16 +119,21 @@ export async function fetchPexelsClips(
     .filter((video) => isLandscape(video.width, video.height))
     .map((video) => {
       const hdFile =
-        video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
-        video.video_files.find((f) => f.file_type === 'video/mp4' && isLandscape(f.width, f.height)) ??
-        video.video_files.find((f) => f.file_type === 'video/mp4') ??
+        video.video_files.find(
+          (f) => f.quality === "hd" && f.file_type === "video/mp4",
+        ) ??
+        video.video_files.find(
+          (f) => f.file_type === "video/mp4" && isLandscape(f.width, f.height),
+        ) ??
+        video.video_files.find((f) => f.file_type === "video/mp4") ??
         video.video_files[0];
       return {
         id: String(video.id),
         thumbnail_url: video.image,
-        media_url: hdFile?.link ?? '',
+        media_url: hdFile?.link ?? "",
         width: video.width,
         height: video.height,
+        duration: video.duration,
       };
     });
   return mapClips(normalized);
@@ -148,7 +154,7 @@ export async function fetchGiphyClips(
   return (data.data ?? []).slice(0, 4).map((item: Record<string, unknown>) => {
     const images = item.images as Record<string, Record<string, string>>;
     return {
-      id: `giphy-${segment.id}-${item.id}-${page}`,
+      id: `giphy-${item.id}-${page}`,
       segmentId: segment.id,
       source: "giphy" as const,
       thumbnail_url: images?.fixed_height_still?.url ?? "",
@@ -284,37 +290,6 @@ export async function analyzeScript(
 ): Promise<RawSegment[]> {
   onStatus?.("Reading your script…");
 
-CRITICAL RULE: You MUST cover the ENTIRE script from the very first word to the very last word. Do NOT stop early. Do NOT skip any part of the script. Every single sentence must appear in exactly one segment. Create as many segments as needed.
-
-Instructions:
-- Split the full script into logical segments of approximately 50–75 words each.
-- Never cut mid-sentence. Never make a segment shorter than 30 words or longer than 100 words.
-- The text_body of every segment must be the exact script text for that segment, copied verbatim.
-- The segments, taken together, must reproduce the entire script with no words missing.
-
-For each segment generate:
-- "pexels_keywords": 3–5 specific visual words describing cinematic, landscape, nature, or action footage. Example: "busy city street night rain"
-- "giphy_keywords": 2–3 words for a fun expressive GIF. Example: "mind blown"
-- "duration_estimate": estimated speaking time e.g. "~15 seconds"
-
-Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
-{
-  "segments": [
-    {
-      "order_index": 1,
-      "text_body": "exact script text for this segment",
-      "pexels_keywords": "keywords here",
-      "giphy_keywords": "giphy search terms",
-      "duration_estimate": "~15 seconds"
-    }
-  ]
-}
-
-Full script:
-${script}`;
-
-async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
-  const apiKey = storage.getGroqKey();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180_000);
 
@@ -383,32 +358,4 @@ async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
     if ((e as Error).name === "AbortError") throw new Error("TIMEOUT");
     throw e;
   }
-}
-
-function findSplitPoint(script: string): number {
-  const mid = Math.floor(script.length / 2);
-  const forward = script.indexOf('. ', mid);
-  if (forward !== -1) return forward + 2;
-  const backward = script.lastIndexOf('. ', mid);
-  if (backward !== -1) return backward + 2;
-  return mid;
-}
-
-export async function analyzeScript(script: string): Promise<RawSegment[]> {
-  const wordCount = script.trim().split(/\s+/).length;
-
-  if (wordCount > 1200) {
-    const splitAt = findSplitPoint(script);
-    const firstHalf = script.slice(0, splitAt).trim();
-    const secondHalf = script.slice(splitAt).trim();
-
-    const [firstSegs, secondSegs] = await Promise.all([
-      callGroq(firstHalf),
-      callGroq(secondHalf),
-    ]);
-
-    return [...firstSegs, ...secondSegs];
-  }
-
-  return callGroq(script);
 }
