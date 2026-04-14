@@ -18,13 +18,13 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
 
   const mapClips = (data: Array<{ id: string; thumbnail_url: string; media_url: string; width?: number; height?: number }>) =>
     data.slice(0, 4).map((item) => ({
-    id: `pexels-${item.id}-${page}`,
-    segmentId: segment.id,
-    source: 'pexels' as const,
-    thumbnail_url: item.thumbnail_url,
-    media_url: item.media_url,
-    width: item.width,
-    height: item.height,
+      id: `pexels-${segment.id}-${item.id}-${page}`,
+      segmentId: segment.id,
+      source: 'pexels' as const,
+      thumbnail_url: item.thumbnail_url,
+      media_url: item.media_url,
+      width: item.width,
+      height: item.height,
     }));
 
   try {
@@ -86,19 +86,19 @@ export async function fetchPexelsClips(segment: Segment, page: number, signal?: 
   const normalized = (directData.videos ?? [])
     .filter((video) => isLandscape(video.width, video.height))
     .map((video) => {
-    const hdFile =
-      video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
-      video.video_files.find((f) => f.file_type === 'video/mp4' && isLandscape(f.width, f.height)) ??
-      video.video_files.find((f) => f.file_type === 'video/mp4') ??
-      video.video_files[0];
-    return {
-      id: String(video.id),
-      thumbnail_url: video.image,
-      media_url: hdFile?.link ?? '',
-      width: video.width,
-      height: video.height,
-    };
-  });
+      const hdFile =
+        video.video_files.find((f) => f.quality === 'hd' && f.file_type === 'video/mp4') ??
+        video.video_files.find((f) => f.file_type === 'video/mp4' && isLandscape(f.width, f.height)) ??
+        video.video_files.find((f) => f.file_type === 'video/mp4') ??
+        video.video_files[0];
+      return {
+        id: String(video.id),
+        thumbnail_url: video.image,
+        media_url: hdFile?.link ?? '',
+        width: video.width,
+        height: video.height,
+      };
+    });
   return mapClips(normalized);
 }
 
@@ -112,7 +112,7 @@ export async function fetchGiphyClips(segment: Segment, page: number): Promise<C
   return (data.data ?? []).slice(0, 4).map((item: Record<string, unknown>) => {
     const images = item.images as Record<string, Record<string, string>>;
     return {
-      id: `giphy-${item.id}-${page}`,
+      id: `giphy-${segment.id}-${item.id}-${page}`,
       segmentId: segment.id,
       source: 'giphy' as const,
       thumbnail_url: images?.fixed_height_still?.url ?? '',
@@ -166,7 +166,6 @@ Return ONLY valid raw JSON with no markdown, no explanation, no code blocks:
 Full script:
 ${script}`;
 
-// Makes a single Groq API call for one chunk of the script.
 async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
   const apiKey = storage.getGroqKey();
   const controller = new AbortController();
@@ -206,31 +205,23 @@ async function callGroq(scriptChunk: string): Promise<RawSegment[]> {
   }
 }
 
-// Finds a good sentence boundary split point near the middle of the script.
-// Returns the index just after a period+space near the midpoint.
 function findSplitPoint(script: string): number {
   const mid = Math.floor(script.length / 2);
-  // Search forward from midpoint for a ". " boundary
   const forward = script.indexOf('. ', mid);
-  if (forward !== -1) return forward + 2; // after ". "
-  // Fallback: search backward
+  if (forward !== -1) return forward + 2;
   const backward = script.lastIndexOf('. ', mid);
   if (backward !== -1) return backward + 2;
-  // No good split found — return mid
   return mid;
 }
 
 export async function analyzeScript(script: string): Promise<RawSegment[]> {
   const wordCount = script.trim().split(/\s+/).length;
 
-  // For long scripts, split into two halves and make two parallel Groq calls.
-  // This avoids hitting the max_tokens output limit and getting a truncated response.
   if (wordCount > 1200) {
     const splitAt = findSplitPoint(script);
     const firstHalf = script.slice(0, splitAt).trim();
     const secondHalf = script.slice(splitAt).trim();
 
-    // Run both halves in parallel
     const [firstSegs, secondSegs] = await Promise.all([
       callGroq(firstHalf),
       callGroq(secondHalf),

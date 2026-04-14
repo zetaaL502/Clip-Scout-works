@@ -54,8 +54,12 @@ function isPexelsClipId(clipId: string): boolean {
 }
 
 function parsePexelsVideoId(clipId: string): string | null {
-  const match = /^pexels-(.+)-\d+$/.exec(clipId);
-  return match?.[1] ?? null;
+  // New format: pexels-{segmentId}-{videoId}-{page}
+  // Old format: pexels-{videoId}-{page}
+  const parts = clipId.split('-');
+  if (parts.length < 3) return null;
+  // Video ID is always the second-to-last part before the page number
+  return parts[parts.length - 2] ?? null;
 }
 
 function isLandscapeClip(clip: Clip): boolean {
@@ -85,26 +89,14 @@ async function exportVideosInBatches(
   addToast: (type: 'success' | 'error' | 'info', message: string) => void,
   scriptContent?: string,
 ): Promise<void> {
-  // Extra safety: dedupe again at export-time in case cached selections/clips contain repeats.
-  // Preserves first-seen order.
-  const seenExportKeys = new Set<string>();
-  const dedupedVideoDataArray: Clip[] = [];
-  for (const clip of videoDataArray) {
-    const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
-    const key = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
-    if (seenExportKeys.has(key)) continue;
-    seenExportKeys.add(key);
-    dedupedVideoDataArray.push(clip);
-  }
-
-  const total = dedupedVideoDataArray.length;
+  const total = videoDataArray.length;
   const baseTimestamp = Date.now();
   let processed = 0;
   const totalBatches = Math.ceil(total / EXPORT_BATCH_SIZE);
 
   for (let batchStart = 0; batchStart < total; batchStart += EXPORT_BATCH_SIZE) {
     const batchIndex = Math.floor(batchStart / EXPORT_BATCH_SIZE);
-    const batchItems = dedupedVideoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
+    const batchItems = videoDataArray.slice(batchStart, batchStart + EXPORT_BATCH_SIZE);
     let zip: JSZip | null = new JSZip();
     const folderName = `youtube_export_part${batchIndex + 1}`;
 
@@ -161,7 +153,6 @@ export function GridPage({ onBack, onSettings }: Props) {
   const [bulkSelectNonce, setBulkSelectNonce] = useState(0);
   const [exporting, setExporting] = useState(false);
   const exportInFlightRef = useRef(false);
-  const exportLockKey = '__clipscout_export_lock__';
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const [scrollProgress, setScrollProgress] = useState(0);
   const project = storage.getProject();
@@ -391,6 +382,7 @@ export function GridPage({ onBack, onSettings }: Props) {
     storage.setSelections(updated);
     setSelections(updated);
   }
+
   const segmentsWithSelection = useMemo(
     () =>
       segments.filter((seg) => {
@@ -401,10 +393,8 @@ export function GridPage({ onBack, onSettings }: Props) {
   );
 
   async function handleExport() {
-    const g = globalThis as unknown as Record<string, unknown>;
-    if (selectedCount === 0 || exportInFlightRef.current || g[exportLockKey] === true) return;
+    if (selectedCount === 0 || exportInFlightRef.current) return;
     exportInFlightRef.current = true;
-    g[exportLockKey] = true;
 
     const clipById = new Map<string, Clip>();
     Object.values(allClips).forEach((segClips) => {
@@ -429,26 +419,16 @@ export function GridPage({ onBack, onSettings }: Props) {
       .map((id) => clipById.get(id))
       .filter((clip): clip is Clip => Boolean(clip));
 
-    // Deduplicate by underlying media identity:
-    // - Pexels: stable video id (ignores page suffix)
-    // - Others: media URL fallback
-    const uniqueByMedia = new Map<string, Clip>();
-    selectedClips.forEach((clip) => {
-      const pexelsVideoId = clip.source === 'pexels' ? parsePexelsVideoId(clip.id) : null;
-      const mediaKey = pexelsVideoId ? `pexels:${pexelsVideoId}` : `${clip.source}:${clip.media_url}`;
-      if (!uniqueByMedia.has(mediaKey)) {
-        uniqueByMedia.set(mediaKey, clip);
-      }
-    });
-
-    const exportable = Array.from(uniqueByMedia.values()).filter(isLandscapeClip);
+    const exportable = selectedClips.filter(isLandscapeClip);
+    
     if (exportable.length === 0) {
       addToast('error', 'No horizontal clips selected for export.');
       exportInFlightRef.current = false;
       return;
     }
-    if (exportable.length < uniqueByMedia.size) {
-      addToast('info', `${uniqueByMedia.size - exportable.length} vertical clip(s) skipped.`);
+    
+    if (exportable.length < selectedClips.length) {
+      addToast('info', `${selectedClips.length - exportable.length} vertical clip(s) skipped.`);
     }
 
     setExporting(true);
@@ -469,7 +449,6 @@ export function GridPage({ onBack, onSettings }: Props) {
     } finally {
       setExporting(false);
       exportInFlightRef.current = false;
-      g[exportLockKey] = false;
     }
   }
 
